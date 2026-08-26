@@ -25,6 +25,7 @@ SOFTWARE.
 import numpy as np
 from typing import *
 from adsg_core.graph.adsg_nodes import *
+from adsg_core.graph.parameter_node import ParameterNode
 from adsg_core.optimization.dv_output_defs import *
 from cached_property import cached_property
 from adsg_core.func_cache import cached_function, clear_func_cache
@@ -378,6 +379,10 @@ class GraphProcessor:
     @cached_property
     def design_variable_nodes(self) -> List[DesignVariableNode]:
         return self.graph.ordered_choice_nodes(self.graph.des_var_nodes)
+
+    @cached_property
+    def parameter_nodes(self) -> List[ParameterNode]:
+        return sorted(self.graph.get_nodes_by_type(ParameterNode))
 
     @cached_property
     def metric_nodes(self) -> List[MetricNode]:

@@ -29,6 +29,7 @@ from natsort import natsorted
 from adsg_core.graph.export import *
 from adsg_core.graph.traversal import *
 from adsg_core.graph.adsg_nodes import *
+from adsg_core.graph.parameter_node import *
 from adsg_core.graph.graph_edges import *
 from adsg_core.graph.choices import *
 from adsg_core.graph.incompatibility import *
@@ -286,6 +287,10 @@ class DSG:
     @property
     def metric_nodes(self) -> List[MetricNode]:
         return self.get_nodes_by_type(MetricNode)
+
+    @property
+    def parameter_nodes(self) -> List[ParameterNode]:
+        return self.get_nodes_by_type(ParameterNode)
 
     def set_metric_value(self, metric_node: MetricNode, value: float):
         """

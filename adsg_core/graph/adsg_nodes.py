@@ -446,6 +446,12 @@ class MetricType(enum.Flag):
     CONSTRAINT = enum.auto()
     OBJ_OR_CON = OBJECTIVE | CONSTRAINT
 
+class StochasticMetricType(enum.Flag):
+    NONE = 0
+    MEAN = enum.auto()
+    MARGIN = enum.auto()
+    QUANTILE = enum.auto()
+
 
 class MetricNode(DSGNode):
     """
@@ -463,12 +469,14 @@ class MetricNode(DSGNode):
     - `CONSTRAINT`: metric is a constraint (provide a direction and a reference value)
     """
 
-    def __init__(self, name, direction: int = None, ref: float = None, idx=None, type_=None):
+    def __init__(self, name, direction: int = None, ref: float = None, idx=None, type_=None, stochastic_=None, k=None):
         self.name = name
         self.idx = idx
         self.dir = direction  # -1 for min/lte, 1 for max/gte
         self.ref = ref  # Reference value for constraint
         self.type: Optional[MetricType] = type_
+        self.stochastic: Optional[StochasticMetricType] = stochastic_
+        self.k = k
         self.assigned_value = None  # Only for export!
         super(MetricNode, self).__init__()
 
