@@ -52,28 +52,30 @@ class DSGEvaluator(GraphProcessor):
 
     def process_stochastic_qoi(self, metric_node: MetricNode, mean: float, std: float) -> float:
         """
-        Process stochastic qoi metric and return a float stored on the MetricNode that can be used by pymoo.
-        Input:
-            - metric_node: MetricNode to evaluate.
-            - mean, std: returned by UQ method
-        Output:
-            - float
-        TODO Impelent QUANTILE handling and storing distribution
+        Reduce Monte Carlo statistics to the single value the optimizer sees.
+
+        The MARGIN formulation shifts the mean by k standard deviations in the *pessimistic* direction, which
+        depends on whether the metric is minimized or maximized:
+        - minimization / `<= ref` constraint (dir = -1): worse means higher --> mean + k*std
+        - maximization / `>= ref` constraint (dir = +1): worse means lower  --> mean - k*std
         """
-        if metric_node.stochastic == StochasticMetricType.MEAN:
+        if metric_node.stochastic in (None, StochasticMetricType.NONE, StochasticMetricType.MEAN):
             return mean
-        elif metric_node.stochastic == StochasticMetricType.MARGIN:
-            if metric_node.dir == -1:
-                return mean + metric_node.k * std
-            elif metric_node.dir == 1:
-                return mean - metric_node.k * std
-            else:
-                raise ValueError('direction must be -1 or 1')
-        elif metric_node.stochastic == StochasticMetricType.QUANTILE:
+
+        if metric_node.stochastic == StochasticMetricType.MARGIN:
+            if metric_node.dir is None:
+                raise ValueError(f'A direction is needed for a margin metric: {metric_node.name}')
+            if metric_node.k is None or metric_node.k < 0:
+                raise ValueError(f'A positive k is needed for a margin metric: {metric_node.name}')
+            return mean - np.sign(metric_node.dir) * metric_node.k * std
+
+        if metric_node.stochastic == StochasticMetricType.QUANTILE:
             raise NotImplementedError
 
+        raise ValueError(f'Unknown stochastic metric type: {metric_node.stochastic}')
 
-    def propagate_uncertainty(self, uq_method: str, func, dsg: DSGType, metric_nodes:List[MetricNode], **kwargs) -> Dict[MetricNode, float]:
+
+    def propagate_uncertainty(self, uq_method: str, func, dsg: DSGType, metric_node: MetricNode, **kwargs) -> Dict[MetricNode, float]:
         """
         This function propagates uncertainty propagation using a UQ method for a single design vector.
         This function should be called inside _evaluate() per each objective
@@ -85,9 +87,8 @@ class DSGEvaluator(GraphProcessor):
             - Returns a mapping from metric node to float in the same format as _evaluate
         """
         stochastic_metric_node = {}
-        for metric_node in metric_nodes:
-            mean, std = UQMethod.run(dsg, uq_method, func, **kwargs)
-            stochastic_metric_node[metric_node] = self.process_stochastic_qoi(metric_node=metric_node, mean=mean, std=std)
+        mean, std = UQMethod.run(dsg, uq_method, func, **kwargs)
+        stochastic_metric_node[metric_node] = self.process_stochastic_qoi(metric_node=metric_node, mean=mean, std=std)
         return stochastic_metric_node
 
     def evaluate(self, dsg: DSGType) -> Tuple[List[float], List[float]]:

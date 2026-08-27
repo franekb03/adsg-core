@@ -537,8 +537,9 @@ class RobustBeamEvaluator(DSGEvaluator):
 
         # Stochastic metric: run Monte Carlo for THIS design point
         stochastic_nodes = [mn for mn in metric_nodes if mn.stochastic is not None]
-        value_map = self.propagate_uncertainty(
-            'MC', self._deflection, dsg, stochastic_nodes, n=self.n_mc)
+        value_map = {}
+        for stochastic_node in stochastic_nodes:
+            value_map.update(self.propagate_uncertainty("MC", self._deflection, dsg, stochastic_node, n=self.n_mc))
 
         self.mc_samples_seen.append(len(dsg.uncertain_parameter_values))
         value_map[self.mass_node] = mass

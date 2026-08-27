@@ -9,6 +9,8 @@ class UQMethod:
         if method == "MC":
             mean, std = UQMethod.mc(dsg, func, **kwargs)
             return mean, std
+        else:
+            raise ValueError("Method {} not implemented".format(method))
 
     @staticmethod
     def mc(dsg, func, n: int):
