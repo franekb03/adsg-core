@@ -3,17 +3,11 @@ from adsg_core.graph.adsg import *
 
 
 class UQMethod:
-    def __init__(self, dsg: DSGType, method, func, **kwargs):
-        self.dsg = dsg
-        self.method = method
-        self.func = func
-        if self.method == "MC":
-            self.mean, self.std = self.mc(func, **kwargs)
 
     @staticmethod
     def run(dsg, method, func, **kwargs):
         if method == "MC":
-            mean, std = mc(dsg, func, **kwargs)
+            mean, std = UQMethod.mc(dsg, func, **kwargs)
             return mean, std
 
     @staticmethod

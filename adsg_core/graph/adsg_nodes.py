@@ -33,7 +33,7 @@ from collections import OrderedDict
 from adsg_core.graph.graph_edges import *
 import chaospy as cp
 __all__ = ['DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
-           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'Distribution', 'UncertainParameterNode', 'MetricNode', 'MetricType', 'StochasticMetricType', 'EdgeType', 'EdgeTuple',
+           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'UncertainParameterNode', 'MetricNode', 'MetricType', 'StochasticMetricType', 'EdgeType', 'EdgeTuple',
            'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode']
 
 
