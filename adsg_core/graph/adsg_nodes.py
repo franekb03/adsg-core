@@ -31,8 +31,7 @@ from typing import *
 import networkx as nx
 from collections import OrderedDict
 from adsg_core.graph.graph_edges import *
-from chaospy import Distribution
-
+import chaospy as cp
 __all__ = ['DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
            'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'Distribution', 'UncertainParameterNode', 'MetricNode', 'MetricType', 'StochasticMetricType', 'EdgeType', 'EdgeTuple',
            'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode']
@@ -443,16 +442,37 @@ class DesignVariableNode(DSGNode):
 
 class UncertainParameterNode(DSGNode):
 
-    def __init__(self, name, distribution: Distribution, idx=None):
+    def __init__(self, name, nominal=None, distribution: cp.Distribution=None, idx=None):
 
         self.name = name
         self.idx = idx
         self.distribution = distribution
+        self.nominal = nominal
         self.sampled_value = None
         super(UncertainParameterNode, self).__init__()
 
+    @property
+    def is_uncertain(self):
+        return self.distribution is not None
+
     def sample(self, n: int) -> np.ndarray:
         return self.distribution.sample(n)
+
+    def get_export_title(self) -> str:
+        if self.sampled_value is not None:
+            return f'{self.name} = {self.sampled_value:.4g}'
+        if self.is_uncertain:
+            return f'{self.name} ~ {self.distribution}{cp.E(self.distribution), cp.Std(self.distribution)}'
+        return f'{self.name} = {self.nominal}'
+
+    def get_export_color(self) -> str:
+        return _INP_OUT_COLOR
+
+    def str_context(self):
+        return f'PARAM.{self.name}.{self.idx}.{self.dist!r}.{cp.E(self.distribution)}'
+
+    def __str__(self):
+        return f'PARAM[{self.name}]'
 
 class MetricType(enum.Flag):
     NONE = 0

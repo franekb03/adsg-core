@@ -285,7 +285,7 @@ class DSG:
         self._des_var_values = {}
 
     @property
-    def parameter_nodes(self) -> List[UncertainParameterNode]:
+    def uncertain_parameter_nodes(self) -> List[UncertainParameterNode]:
         return self.get_nodes_by_type(UncertainParameterNode)
 
     def set_uncertain_parameter_value(self, parameter_node: UncertainParameterNode, value: float):
@@ -307,7 +307,7 @@ class DSG:
     def sample_parameters(self) -> Dict[UncertainParameterNode, float]:
         """Sample all parameter values present in the DSG instance"""
         values = {}
-        for parameter_node in self.parameter_nodes:
+        for parameter_node in self.uncertain_parameter_nodes:
             value = parameter_node.sample(n=1)[0]
             self.set_uncertain_parameter_value(parameter_node, value)
             values[parameter_node] = value

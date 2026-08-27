@@ -8,14 +8,20 @@ class UQMethod:
         self.method = method
         self.func = func
         if self.method == "MC":
-            self.mean, self.std = self.mc(**kwargs)
+            self.mean, self.std = self.mc(func, **kwargs)
 
+    @staticmethod
+    def run(dsg, method, func, **kwargs):
+        if method == "MC":
+            mean, std = mc(dsg, func, **kwargs)
+            return mean, std
 
-    def mc(self, n: int, func):
+    @staticmethod
+    def mc(dsg, func, n: int):
         res = np.full(n, np.nan)
         for i in range(n):
-            sample = self.dsg.sample_parameters()
-            res[i] = func(self.dsg, sample)
+            sample = dsg.sample_parameters()
+            res[i] = func(dsg, sample)
 
         mean = np.mean(res)
         std = np.std(res)

@@ -64,7 +64,7 @@ class DSGEvaluator(GraphProcessor):
             return mean
         elif metric_node.stochastic == StochasticMetricType.MARGIN:
             return mean + metric_node.k * std
-        elif metric_node.quantile == StochasticMetricType.QUANTILE:
+        elif metric_node.stochastic == StochasticMetricType.QUANTILE:
             raise NotImplementedError
 
 
@@ -81,8 +81,8 @@ class DSGEvaluator(GraphProcessor):
         """
         stochastic_metric_node = {}
         for metric_node in metric_nodes:
-            uq_analysis = UQMethod(dsg, uq_method, func, **kwargs)
-            stochastic_metric_node[metric_node] = self.process_stochastic_qoi(metric_node=metric_node, mean=uq_analysis.mean, std=uq_analysis.std)
+            mean, std = UQMethod.run(dsg, uq_method, func, **kwargs)
+            stochastic_metric_node[metric_node] = self.process_stochastic_qoi(metric_node=metric_node, mean=mean, std=std)
         return stochastic_metric_node
 
     def evaluate(self, dsg: DSGType) -> Tuple[List[float], List[float]]:
