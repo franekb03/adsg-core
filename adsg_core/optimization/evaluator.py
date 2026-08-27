@@ -25,9 +25,10 @@ SOFTWARE.
 import math
 from typing import *
 from adsg_core.graph.adsg import DSGType
-from adsg_core.graph.adsg_nodes import MetricNode
+from adsg_core.graph.adsg_nodes import MetricNode, StochasticMetricType, UncertainParameterNode
 from adsg_core.optimization.dv_output_defs import *
 from adsg_core.optimization.graph_processor import *
+from adsg_core.optimization.uq_method import *
 
 __all__ = ['DSGEvaluator', 'ADSGEvaluator']
 
@@ -48,6 +49,41 @@ class DSGEvaluator(GraphProcessor):
     def _choose_metric_type(self, objective: Objective, constraint: Constraint) -> Union[Objective, Constraint]:
         raise RuntimeError(f'Metric {objective.name} can either be an objective or a constraint! '
                            f'Specify the metric type using node.type = MetricType.x')
+
+    def process_stochastic_qoi(self, metric_node: MetricNode, mean: float, std: float) -> float:
+        """
+        Process stochastic qoi metric and return a float stored on the MetricNode that can be used by pymoo.
+        Input:
+            - metric_node: MetricNode to evaluate.
+            - mean, std: returned by UQ method
+        Output:
+            - float
+        TODO Impelent QUANTILE handling and storing distribution
+        """
+        if metric_node.stochastic == StochasticMetricType.MEAN:
+            return mean
+        elif metric_node.stochastic == StochasticMetricType.MARGIN:
+            return mean + metric_node.k * std
+        elif metric_node.quantile == StochasticMetricType.QUANTILE:
+            raise NotImplementedError
+
+
+    def propagate_uncertainty(self, uq_method: str, func, dsg: DSGType, metric_nodes:List[MetricNode], **kwargs) -> Dict[MetricNode, float]:
+        """
+        This function propagates uncertainty propagation using a UQ method for a single design vector.
+        This function should be called inside _evaluate() per each objective
+        Input:
+            - uq_method: UQMethod instance
+            - func: Objective/Constraint function with the following format func(dsg: DSGType, param_sample: List[float]) -> float
+            **kwargs: N samples for Monte Carlo evaluation or any other relevant parameters for the chosen UQ method.
+        Output:
+            - Returns a mapping from metric node to float in the same format as _evaluate
+        """
+        stochastic_metric_node = {}
+        for metric_node in metric_nodes:
+            uq_analysis = UQMethod(dsg, uq_method, func, **kwargs)
+            stochastic_metric_node[metric_node] = self.process_stochastic_qoi(metric_node=metric_node, mean=uq_analysis.mean, std=uq_analysis.std)
+        return stochastic_metric_node
 
     def evaluate(self, dsg: DSGType) -> Tuple[List[float], List[float]]:
         """

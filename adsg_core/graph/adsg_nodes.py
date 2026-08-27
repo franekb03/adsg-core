@@ -31,9 +31,10 @@ from typing import *
 import networkx as nx
 from collections import OrderedDict
 from adsg_core.graph.graph_edges import *
+from chaospy import Distribution
 
 __all__ = ['DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
-           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'MetricNode', 'MetricType', 'EdgeType', 'EdgeTuple',
+           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'Distribution', 'UncertainParameterNode', 'MetricNode', 'MetricType', 'StochasticMetricType', 'EdgeType', 'EdgeTuple',
            'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode']
 
 
@@ -439,6 +440,19 @@ class DesignVariableNode(DSGNode):
     def __str__(self):
         return f'DV[{self.name}]'
 
+
+class UncertainParameterNode(DSGNode):
+
+    def __init__(self, name, distribution: Distribution, idx=None):
+
+        self.name = name
+        self.idx = idx
+        self.distribution = distribution
+        self.sampled_value = None
+        super(UncertainParameterNode, self).__init__()
+
+    def sample(self, n: int) -> np.ndarray:
+        return self.distribution.sample(n)
 
 class MetricType(enum.Flag):
     NONE = 0

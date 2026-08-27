@@ -29,7 +29,6 @@ from natsort import natsorted
 from adsg_core.graph.export import *
 from adsg_core.graph.traversal import *
 from adsg_core.graph.adsg_nodes import *
-from adsg_core.graph.parameter_node import *
 from adsg_core.graph.graph_edges import *
 from adsg_core.graph.choices import *
 from adsg_core.graph.incompatibility import *
@@ -50,7 +49,7 @@ class DSG:
     _taken_single_choices = []
 
     def __init__(self, _graph=None, _influence_matrix=None, _status_array=None, _choice_con_map=None,
-                 _des_var_values=None, _metric_values=None, **_):
+                 _des_var_values=None, _uncertain_parameter_values=None, _metric_values=None, **_):
         self._graph = _graph or self._get_empty_graph()
         self._choice_constraints: List[ChoiceConstraint] = _choice_con_map or []
         self._influence_matrix: Optional[InfluenceMatrix] = _influence_matrix
@@ -58,6 +57,7 @@ class DSG:
 
         self._update_connector_grouping_degrees()
         self._des_var_values: Dict[DesignVariableNode, Union[float, int]] = (_des_var_values or {}).copy()
+        self._uncertain_parameter_values: Dict[UncertainParameterNode, float] = (_uncertain_parameter_values or {}).copy()
         self._metric_values: Dict[MetricNode, float] = (_metric_values or {}).copy()
 
     @staticmethod
@@ -285,12 +285,38 @@ class DSG:
         self._des_var_values = {}
 
     @property
+    def parameter_nodes(self) -> List[UncertainParameterNode]:
+        return self.get_nodes_by_type(UncertainParameterNode)
+
+    def set_uncertain_parameter_value(self, parameter_node: UncertainParameterNode, value: float):
+        """
+        Set the value of a parameter node.
+        """
+        self._uncertain_parameter_values[parameter_node] = value
+
+    def uncertain_parameter_value(self, parameter_node: UncertainParameterNode) -> Optional[float]:
+        return self._uncertain_parameter_values.get(parameter_node)
+
+    @property
+    def uncertain_parameter_values(self):
+        return self._uncertain_parameter_values.copy()
+
+    def reset_uncertain_parameter_values(self):
+        self._uncertain_parameter_values = {}
+
+    def sample_parameters(self) -> Dict[UncertainParameterNode, float]:
+        """Sample all parameter values present in the DSG instance"""
+        values = {}
+        for parameter_node in self.parameter_nodes:
+            value = parameter_node.sample(n=1)[0]
+            self.set_uncertain_parameter_value(parameter_node, value)
+            values[parameter_node] = value
+        return values
+
+    @property
     def metric_nodes(self) -> List[MetricNode]:
         return self.get_nodes_by_type(MetricNode)
 
-    @property
-    def parameter_nodes(self) -> List[ParameterNode]:
-        return self.get_nodes_by_type(ParameterNode)
 
     def set_metric_value(self, metric_node: MetricNode, value: float):
         """
@@ -690,7 +716,7 @@ class DSG:
         dec_con_map_copy = self._choice_constraints.copy()
         return self.__class__(_graph=graph_copy, _influence_matrix=self._influence_matrix,
                               _status_array=status_array if status_array is not None else self._status_array,
-                              _choice_con_map=dec_con_map_copy, _des_var_values=self._des_var_values,
+                              _choice_con_map=dec_con_map_copy, _des_var_values=self._des_var_values, _uncertain_parameter_values=self._uncertain_parameter_values,
                               _metric_values=self._metric_values, **kwargs)
 
     def _mod_graph_adjust_kwargs(self, kwargs):
@@ -706,7 +732,7 @@ class DSG:
         self._mod_graph_adjust_kwargs(kwargs)
         return self.__class__(_graph=graph_copy, _influence_matrix=self._influence_matrix,
                               _status_array=self._status_array, _choice_con_map=self._choice_constraints,
-                              _des_var_values=self._des_var_values, _metric_values=self._metric_values, **kwargs)
+                              _des_var_values=self._des_var_values, _uncertain_parameter_values=self._uncertain_parameter_values, _metric_values=self._metric_values, **kwargs)
 
     """#########################################
     ### INCOMPATIBILITY CONSTRAINT FUNCTIONS ###

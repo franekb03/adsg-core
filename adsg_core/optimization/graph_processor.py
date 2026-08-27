@@ -25,7 +25,6 @@ SOFTWARE.
 import numpy as np
 from typing import *
 from adsg_core.graph.adsg_nodes import *
-from adsg_core.graph.parameter_node import ParameterNode
 from adsg_core.optimization.dv_output_defs import *
 from cached_property import cached_property
 from adsg_core.func_cache import cached_function, clear_func_cache
@@ -381,8 +380,8 @@ class GraphProcessor:
         return self.graph.ordered_choice_nodes(self.graph.des_var_nodes)
 
     @cached_property
-    def parameter_nodes(self) -> List[ParameterNode]:
-        return sorted(self.graph.get_nodes_by_type(ParameterNode))
+    def uncertain_parameter_nodes(self) -> List[UncertainParameterNode]:
+        return sorted(self.graph.get_nodes_by_type(UncertainParameterNode))
 
     @cached_property
     def metric_nodes(self) -> List[MetricNode]:

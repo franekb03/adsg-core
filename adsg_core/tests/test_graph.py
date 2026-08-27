@@ -794,6 +794,36 @@ def test_des_var_nodes(n):
         adsg.reset_des_var_values()
 
 
+def test_uncertain_parameter_nodes(n):
+    import chaospy as cp
+    par_node_a = UncertainParameterNode('A', cp.Normal(0, 1))
+    par_node_b = UncertainParameterNode('B', cp.Normal(5, 1))
+
+    dsg = BasicDSG()
+    dsg.add_edges([
+        (n[0], par_node_a),
+        (n[0], par_node_b),
+    ])
+    dsg = dsg.set_start_nodes({n[0]})
+
+    assert dsg.feasible
+    assert dsg.final
+
+    for _ in range(2):
+        assert dsg.uncertain_parameter_value(par_node_a) is None
+        dsg.set_uncertain_parameter_value(par_node_a, .5)
+        assert dsg.uncertain_parameter_value(par_node_a) == .5
+
+        dsg2 = dsg.copy()
+        assert dsg2.uncertain_parameter_value(par_node_a) == .5
+
+        assert dsg.uncertain_parameter_value(par_node_b) is None
+        dsg.set_uncertain_parameter_value(par_node_b, math.nan)
+        assert math.isnan(dsg.uncertain_parameter_value(par_node_b))
+
+        dsg.reset_uncertain_parameter_values()
+
+
 def test_metric_nodes(n):
     met_node = MetricNode('A')
     obj_node = MetricNode('B', direction=-1)
