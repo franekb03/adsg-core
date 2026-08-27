@@ -63,7 +63,12 @@ class DSGEvaluator(GraphProcessor):
         if metric_node.stochastic == StochasticMetricType.MEAN:
             return mean
         elif metric_node.stochastic == StochasticMetricType.MARGIN:
-            return mean + metric_node.k * std
+            if metric_node.dir == -1:
+                return mean + metric_node.k * std
+            elif metric_node.dir == 1:
+                return mean - metric_node.k * std
+            else:
+                raise ValueError('direction must be -1 or 1')
         elif metric_node.stochastic == StochasticMetricType.QUANTILE:
             raise NotImplementedError
 

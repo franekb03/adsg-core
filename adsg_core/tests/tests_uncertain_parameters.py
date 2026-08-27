@@ -335,10 +335,12 @@ def test_process_stochastic_qoi_mean(noop_evaluator):
 
 @pytest.mark.parametrize('k', [0., 1., 3.])
 def test_process_stochastic_qoi_margin(noop_evaluator, k):
-    """For a minimization metric, the margin formulation penalizes spread: mean + k*std"""
+    """For a minimization/maximization metric, the margin formulation penalizes spread: mean +/- k*std"""
     metric_node = MetricNode('M', direction=-1, stochastic_=StochasticMetricType.MARGIN, k=k)
     assert noop_evaluator.process_stochastic_qoi(metric_node, mean=5., std=2.) == 5. + k*2.
 
+    metric_node2 = MetricNode('M2', direction=1, stochastic_=StochasticMetricType.MARGIN, k=k)
+    assert noop_evaluator.process_stochastic_qoi(metric_node2, mean=5., std=2.) == 5. - k*2.
 
 def test_process_stochastic_qoi_margin_penalizes_spread(noop_evaluator):
     metric_node = MetricNode('M', direction=-1, stochastic_=StochasticMetricType.MARGIN, k=2.)
@@ -348,6 +350,17 @@ def test_process_stochastic_qoi_margin_penalizes_spread(noop_evaluator):
 
     # Same mean, less scatter --> better (lower) value for a minimization metric
     assert less_spread < robust
+
+def test_process_stochastic_qoi_margin_compared_with_mean(noop_evaluator):
+    metric_node_mean = MetricNode("M1", direction=-1, stochastic_=StochasticMetricType.MEAN, k=2.)
+    metric_node_margin_max = MetricNode("M2", direction=1, stochastic_=StochasticMetricType.MARGIN, k=2.)
+    metric_node_margin_min = MetricNode("M3", direction=-1, stochastic_=StochasticMetricType.MARGIN, k=2.)
+
+    mean = noop_evaluator.process_stochastic_qoi(metric_node_mean, mean=5., std=2.)
+    max = noop_evaluator.process_stochastic_qoi(metric_node_margin_max, mean=5., std=2.)
+    min = noop_evaluator.process_stochastic_qoi(metric_node_margin_min, mean=5., std=2.)
+
+    assert max < mean < min
 
 
 def test_process_stochastic_qoi_quantile_not_implemented(noop_evaluator):
