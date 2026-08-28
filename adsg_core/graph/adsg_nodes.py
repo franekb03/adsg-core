@@ -32,8 +32,9 @@ import networkx as nx
 from collections import OrderedDict
 from adsg_core.graph.graph_edges import *
 import chaospy as cp
+from dataclasses import dataclass
 __all__ = ['DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
-           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'UncertainParameterNode', 'MetricNode', 'MetricType', 'StochasticMetricType', 'EdgeType', 'EdgeTuple',
+           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'UncertainParameterNode', 'MetricNode', 'MetricType', 'StochasticMetricType', 'MetricStatistics','EdgeType', 'EdgeTuple',
            'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode']
 
 
@@ -441,6 +442,9 @@ class DesignVariableNode(DSGNode):
 
 
 class UncertainParameterNode(DSGNode):
+    """
+    Node representing uncertainty parameter with a given distribution.
+    """
 
     def __init__(self, name, nominal=None, distribution: cp.Distribution=None, idx=None):
 
@@ -486,6 +490,24 @@ class StochasticMetricType(enum.Flag):
     MARGIN = enum.auto()
     QUANTILE = enum.auto()
 
+@dataclass(frozen=True)
+class MetricStatistics:
+    """
+    Raw statistics of a stochastic metric, as produced by an uncertainty propagation method and *before* being
+    reduced to the single value the optimizer sees (see `DSGEvaluator.process_stochastic_qoi`).
+
+    Stored per DSG instance, so that the mean and standard deviation behind a reduced metric value remain
+    available after evaluation.
+    """
+    mean: float
+    std: float
+    method: Optional[str] = None  # Uncertainty propagation method used, e.g. 'MC'
+    n_samples: Optional[int] = None
+    quantiles: Optional[Dict[float, float]] = None  # Reserved for StochasticMetricType.QUANTILE
+
+    def __str__(self):
+        return f'mean={self.mean:.4g}, std={self.std:.4g}'
+
 
 class MetricNode(DSGNode):
     """
@@ -512,6 +534,7 @@ class MetricNode(DSGNode):
         self.stochastic: Optional[StochasticMetricType] = stochastic_
         self.k = k
         self.assigned_value = None  # Only for export!
+        self.assigned_statistics: Optional[MetricStatistics] = None  # Only for export!
         super(MetricNode, self).__init__()
 
     def get_export_title(self) -> str:
@@ -523,6 +546,10 @@ class MetricNode(DSGNode):
             else:
                 role_str = ' [↑]' if self.dir > 0 else ' [↓]'
 
+        # Show the statistics a stochastic
+        if self.assigned_statistics is not None:
+            role_str = f' ({self._statistics_str(self.assigned_statistics)})' + role_str
+
         if self.assigned_value is not None:
             if math.isnan(self.assigned_value):
                 role_str = f' = NaN'+role_str
@@ -530,6 +557,12 @@ class MetricNode(DSGNode):
                 role_str = f' = {self.assigned_value:.4g}'+role_str
 
         return self.name+role_str
+
+    @staticmethod
+    def _statistics_str(statistics: 'MetricStatistics') -> str:
+        mean_str = 'NaN' if math.isnan(statistics.mean) else f'{statistics.mean:.4g}'
+        std_str = 'NaN' if math.isnan(statistics.std) else f'{statistics.std:.4g}'
+        return f'μ={mean_str}, σ={std_str}'
 
     def get_export_color(self) -> str:
         return _INP_OUT_COLOR

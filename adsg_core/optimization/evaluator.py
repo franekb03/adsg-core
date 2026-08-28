@@ -52,12 +52,7 @@ class DSGEvaluator(GraphProcessor):
 
     def process_stochastic_qoi(self, metric_node: MetricNode, mean: float, std: float) -> float:
         """
-        Reduce Monte Carlo statistics to the single value the optimizer sees.
-
-        The MARGIN formulation shifts the mean by k standard deviations in the *pessimistic* direction, which
-        depends on whether the metric is minimized or maximized:
-        - minimization / `<= ref` constraint (dir = -1): worse means higher --> mean + k*std
-        - maximization / `>= ref` constraint (dir = +1): worse means lower  --> mean - k*std
+        Reduce statistics of stochastic metric to the single value the optimizer sees.
         """
         if metric_node.stochastic in (None, StochasticMetricType.NONE, StochasticMetricType.MEAN):
             return mean
@@ -77,17 +72,20 @@ class DSGEvaluator(GraphProcessor):
 
     def propagate_uncertainty(self, uq_method: str, func, dsg: DSGType, metric_node: MetricNode, **kwargs) -> Dict[MetricNode, float]:
         """
-        This function propagates uncertainty propagation using a UQ method for a single design vector.
+        This function propagates uncertainty using a UQ method for a single design vector.
         This function should be called inside _evaluate() per each objective
         Input:
             - uq_method: UQMethod instance
             - func: Objective/Constraint function with the following format func(dsg: DSGType, param_sample: List[float]) -> float
+            - dsg: DSG instance
+            - metric_node: MetricNode instance
             **kwargs: N samples for Monte Carlo evaluation or any other relevant parameters for the chosen UQ method.
         Output:
-            - Returns a mapping from metric node to float in the same format as _evaluate
+            - Returns a mapping from metric node to float
         """
         stochastic_metric_node = {}
         mean, std = UQMethod.run(dsg, uq_method, func, **kwargs)
+        dsg.set_metric_statistics(metric_node, mean=mean, std=std, method=uq_method, n_samples=kwargs.get('n'))
         stochastic_metric_node[metric_node] = self.process_stochastic_qoi(metric_node=metric_node, mean=mean, std=std)
         return stochastic_metric_node
 

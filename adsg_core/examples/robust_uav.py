@@ -381,8 +381,17 @@ def run_sbo(n_infill: int = 20, init_size: int = 40, n_mc: int = 1000, k: float 
 
 
 if __name__ == '__main__':
-    run_sbo(n_infill=20, init_size=40, n_mc=1000, k=3, objective=None, seed=None, verbose=True)
-    # from adsg_core.render import DSGRenderer
+    evaluator = RobustUAVEvaluator(n_mc=1000, k=2., objective=None)
+    x = evaluator.get_random_design_vector()
+    dsg, _, _ = evaluator.get_graph(x)
+    obj, con = evaluator.evaluate(dsg)
+    print(obj)
+    print(con)
+    print(dsg.all_metric_statistics)
+    dsg.render()
+
+
+    # run_sbo(n_infill=20, init_size=40, n_mc=1000, k=3, objective=None, seed=None, verbose=True)
     # DSGRenderer.render_legend()
     #
     # evaluator = RobustUAVEvaluator(n_mc=100, k=2., objective=None)
