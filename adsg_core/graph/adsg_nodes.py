@@ -463,11 +463,9 @@ class UncertainParameterNode(DSGNode):
         return self.distribution.sample(n)
 
     def get_export_title(self) -> str:
-        if self.sampled_value is not None:
-            return f'{self.name} = {self.sampled_value:.4g}'
-        if self.is_uncertain:
-            return f'{self.name} ~ {self.distribution}'
-        return f'{self.name} = {self.nominal}'
+        if not self.is_uncertain:
+            return f'{self.name} = {self.nominal}'
+        return f'{self.name} = {self.distribution}'
 
     def get_export_color(self) -> str:
         return _INP_OUT_COLOR

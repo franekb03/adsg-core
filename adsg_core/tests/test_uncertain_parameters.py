@@ -89,9 +89,8 @@ def test_uncertain_parameter_node_export_title():
     par_node = UncertainParameterNode('E', distribution=cp.Normal(10., 2.))
     assert par_node.get_export_title()
 
-    # Once a value has been assigned, it is shown instead of the distribution
     par_node.sampled_value = 11.5
-    assert par_node.get_export_title() == 'E = 11.5'
+    assert par_node.get_export_title() == f'E = {cp.Normal(10., 2.).__str__()}'
 
 
 def test_uncertain_parameter_nodes_are_distinct():
@@ -694,3 +693,116 @@ def test_robust_problem_random_design_points(robust_evaluator):
         assert len(obj) == 2
         assert all(np.isfinite(obj))
         assert all(value > 0 for value in obj)
+
+
+"""#################################
+### 8. Metric statistics storage ###
+#################################"""
+
+
+
+def test_set_get_metric_statistics(n):
+    metric_node = MetricNode('M', direction=-1)
+
+    dsg = BasicDSG()
+    dsg.add_edges([(n[0], metric_node)])
+    dsg = dsg.set_start_nodes({n[0]})
+
+    assert dsg.metric_statistics(metric_node) is None
+    assert dsg.all_metric_statistics == {}
+
+    dsg.set_metric_statistics(metric_node, mean=5., std=2., method='MC', n_samples=50)
+    statistics = dsg.metric_statistics(metric_node)
+    assert (statistics.mean, statistics.std, statistics.n_samples) == (5., 2., 50)
+
+    # The map is a copy: mutating it must not affect the graph
+    all_statistics = dsg.all_metric_statistics
+    all_statistics[metric_node] = MetricStatistics(mean=99., std=0.)
+    assert dsg.metric_statistics(metric_node).mean == 5.
+
+    dsg.reset_metric_statistics()
+    assert dsg.metric_statistics(metric_node) is None
+
+
+def test_metric_statistics_survive_copy_and_derivation(n):
+    """Statistics must be carried through both DSG instance constructors"""
+    metric_node = MetricNode('M', direction=-1, type_=MetricType.OBJECTIVE)
+
+    dsg = BasicDSG()
+    dsg.add_edges([(n[0], metric_node)])
+    dsg.add_selection_choice('C1', n[0], [n[1], n[2]])
+    dsg = dsg.set_start_nodes({n[0]})
+
+    dsg.set_metric_statistics(metric_node, mean=1., std=.5)
+
+    # get_for_kept_edges
+    assert dsg.copy().metric_statistics(metric_node).mean == 1.
+
+    # get_for_adjusted (used while deriving an architecture)
+    graph, _, _ = GraphProcessor(dsg).get_graph([0])
+    assert graph.metric_statistics(metric_node).mean == 1.
+
+
+def test_propagate_uncertainty_stores_statistics(robust_evaluator):
+    """propagate_uncertainty records the raw statistics on the DSG instance it was given"""
+    graph, _, _ = robust_evaluator.get_graph([0, 3.])
+    assert graph.all_metric_statistics == {}
+
+    value_map = robust_evaluator.propagate_uncertainty(
+        'MC', robust_evaluator._deflection, graph, robust_evaluator.deflection_node, n=50)
+
+    statistics = graph.metric_statistics(robust_evaluator.deflection_node)
+    assert statistics is not None
+    assert statistics.method == 'MC'
+    assert statistics.n_samples == 50
+    assert statistics.std > 0
+
+    # The returned (reduced) value is exactly the reduction of the stored statistics
+    assert value_map[robust_evaluator.deflection_node] == pytest.approx(
+        statistics.mean + robust_evaluator.k*statistics.std)
+
+
+def test_robust_problem_stores_statistics(robust_evaluator):
+    """A full evaluate() records statistics for stochastic metrics only"""
+    graph, _, _ = robust_evaluator.get_graph([0, 3.])
+    robust_evaluator.evaluate(graph)
+
+    statistics = graph.metric_statistics(robust_evaluator.deflection_node)
+    assert statistics is not None
+    assert statistics.n_samples == robust_evaluator.n_mc
+
+    # The deterministic metric gets a value but no statistics
+    assert graph.metric_value(robust_evaluator.mass_node) is not None
+    assert graph.metric_statistics(robust_evaluator.mass_node) is None
+
+
+def test_robust_problem_statistics_reduce_to_stored_value():
+    """The stored metric value is exactly the reduction of the stored statistics"""
+    for stochastic, k in [(StochasticMetricType.MEAN, 2.), (StochasticMetricType.MARGIN, 2.)]:
+        evaluator = RobustBeamEvaluator(stochastic=stochastic, k=k, n_mc=200)
+        graph, _, _ = evaluator.get_graph([0, 3.])
+        evaluator.evaluate(graph)
+
+        statistics = graph.metric_statistics(evaluator.deflection_node)
+        value = graph.metric_value(evaluator.deflection_node)
+
+        # deflection is minimized (dir = -1), so the margin is mean + k*std
+        expected = statistics.mean if stochastic == StochasticMetricType.MEAN \
+            else statistics.mean + k*statistics.std
+        assert value == pytest.approx(expected)
+
+
+def test_robust_problem_statistics_isolated_between_design_points(robust_evaluator):
+    """Each evaluated instance holds its own statistics; the template graph holds none"""
+    graph_a, _, _ = robust_evaluator.get_graph([0, 2.])
+    graph_b, _, _ = robust_evaluator.get_graph([0, 5.])
+
+    robust_evaluator.evaluate(graph_a)
+    robust_evaluator.evaluate(graph_b)
+
+    statistics_a = graph_a.metric_statistics(robust_evaluator.deflection_node)
+    statistics_b = graph_b.metric_statistics(robust_evaluator.deflection_node)
+
+    # A thicker beam deflects less, so the two design points must not share statistics
+    assert statistics_a.mean > statistics_b.mean
+    assert robust_evaluator.graph.all_metric_statistics == {}
