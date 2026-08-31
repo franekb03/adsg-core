@@ -460,8 +460,12 @@ class UncertainParameterNode(DSGNode):
         return self.distribution is not None
 
     def sample(self, n: int) -> np.ndarray:
-        return self.distribution.sample(n)
-
+        if self.distribution is None:
+            if self.nominal is None:
+                raise ValueError(f'Cannot sample parameter {self.name!r}: no distribution or nominal value set')
+            return np.full(n, float(self.nominal))
+        samples = np.asarray(self.distribution.sample(n))
+        return samples.reshape((n,))
     def get_export_title(self) -> str:
         if not self.is_uncertain:
             return f'{self.name} = {self.nominal}'
