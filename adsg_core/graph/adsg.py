@@ -309,7 +309,7 @@ class DSG:
         self._uncertain_parameter_values = {}
 
     def sample_parameters(self) -> Dict[UncertainParameterNode, float]:
-        """Sample all parameter values present in the DSG instance"""
+        """Sample all parameter values present in the DSG instance and set the value on graph"""
         values = {}
         for parameter_node in self.uncertain_parameter_nodes:
             value = parameter_node.sample(n=1)[0]

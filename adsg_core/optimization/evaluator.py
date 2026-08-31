@@ -76,7 +76,7 @@ class DSGEvaluator(GraphProcessor):
         This function should be called inside _evaluate() per each objective
         Input:
             - uq_method: UQMethod instance
-            - func: Objective/Constraint function with the following format func(dsg: DSGType, param_sample: List[float]) -> float
+            - func: Objective/Constraint function with the following format func(dsg: DSGType, param_sample: Dict[UncertainParameterNode, float]) -> float
             - dsg: DSG instance
             - metric_node: MetricNode instance
             **kwargs: N samples for Monte Carlo evaluation or any other relevant parameters for the chosen UQ method.

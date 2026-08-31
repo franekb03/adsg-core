@@ -16,6 +16,7 @@ class UQMethod:
     def mc(dsg, func, n: int):
         res = np.full(n, np.nan)
         for i in range(n):
+            # Sample parameters on DSG instance and return a dictionary sample: Dict[UncertainParameterNode, float]
             sample = dsg.sample_parameters()
             res[i] = func(dsg, sample)
 
