@@ -37,6 +37,8 @@ from adsg_core.graph.choice_constraints import *
 
 __all__ = ['DSG', 'EdgeType', 'CDVNode', 'ChoiceConstraint', 'ChoiceConstraintType', 'DSGType', 'ADSG', 'ADSGType']
 
+from sb_arch_opt.uncertainty import StochasticOutput
+
 
 class DSG:
     """
@@ -49,7 +51,7 @@ class DSG:
     _taken_single_choices = []
 
     def __init__(self, _graph=None, _influence_matrix=None, _status_array=None, _choice_con_map=None,
-                 _des_var_values=None, _uncertain_parameter_values=None, _metric_values=None, _metric_statistics=None, **_):
+                 _des_var_values=None, _uncertain_parameter_values=None, _metric_values=None, **_):
         self._graph = _graph or self._get_empty_graph()
         self._choice_constraints: List[ChoiceConstraint] = _choice_con_map or []
         self._influence_matrix: Optional[InfluenceMatrix] = _influence_matrix
@@ -57,9 +59,8 @@ class DSG:
 
         self._update_connector_grouping_degrees()
         self._des_var_values: Dict[DesignVariableNode, Union[float, int]] = (_des_var_values or {}).copy()
-        self._uncertain_parameter_values: Dict[UncertainParameterNode, float] = (_uncertain_parameter_values or {}).copy()
+        self._uncertain_parameter_values: Dict[InputParameter, float] = (_uncertain_parameter_values or {}).copy()
         self._metric_values: Dict[MetricNode, float] = (_metric_values or {}).copy()
-        self._metric_statistics: Dict[MetricNode, MetricStatistics] = (_metric_statistics or {}).copy()
 
     @staticmethod
     def _get_empty_graph():
@@ -289,16 +290,16 @@ class DSG:
         self._des_var_values = {}
 
     @property
-    def uncertain_parameter_nodes(self) -> List[UncertainParameterNode]:
-        return self.get_nodes_by_type(UncertainParameterNode)
+    def uncertain_parameter_nodes(self) -> List[InputParameter]:
+        return self.get_nodes_by_type(InputParameter)
 
-    def set_uncertain_parameter_value(self, parameter_node: UncertainParameterNode, value: float):
+    def set_uncertain_parameter_value(self, parameter_node: InputParameter, value: float):
         """
         Set the value of a parameter node.
         """
         self._uncertain_parameter_values[parameter_node] = value
 
-    def uncertain_parameter_value(self, parameter_node: UncertainParameterNode) -> Optional[float]:
+    def uncertain_parameter_value(self, parameter_node: InputParameter) -> Optional[float]:
         return self._uncertain_parameter_values.get(parameter_node)
 
     @property
@@ -308,7 +309,7 @@ class DSG:
     def reset_uncertain_parameter_values(self):
         self._uncertain_parameter_values = {}
 
-    def sample_parameters(self) -> Dict[UncertainParameterNode, float]:
+    def sample_parameters(self) -> Dict[InputParameter, float]:
         """Sample all parameter values present in the DSG instance and set the value on graph"""
         values = {}
         for parameter_node in self.uncertain_parameter_nodes:
@@ -322,7 +323,7 @@ class DSG:
         return self.get_nodes_by_type(MetricNode)
 
 
-    def set_metric_value(self, metric_node: MetricNode, value: float):
+    def set_metric_value(self, metric_node: MetricNode, value: Union[float, StochasticOutput]):
         """
         Set the value of a metric node.
         """
@@ -338,26 +339,7 @@ class DSG:
     def reset_metric_values(self):
         self._metric_values = {}
 
-    def set_metric_statistics(self, metric_node: MetricNode, mean: float, std: float, method: str = None,
-                              n_samples: int = None, quantiles: Dict[float, float] = None):
-        """
-        Set statistics of a stochastic metric node, as produced by an uncertainty propagation method.
 
-        These are stored next to (not instead of) the reduced value set by `set_metric_value`:
-        - the reduced value is what the optimizer sees, these are what it was derived from.
-        """
-        self._metric_statistics[metric_node] = MetricStatistics(mean=mean, std=std, method=method, n_samples=n_samples, quantiles=quantiles)
-
-    def metric_statistics(self, metric_node: MetricNode) -> Optional[MetricStatistics]:
-        """Get the statistics of a stochastic metric node (None for a deterministic metric)"""
-        return self._metric_statistics.get(metric_node)
-
-    @property
-    def all_metric_statistics(self) -> Dict[MetricNode, MetricStatistics]:
-        return self._metric_statistics.copy()
-
-    def reset_metric_statistics(self):
-        self._metric_statistics = {}
 
     """################################
     ### CHOICE CONSTRAINT FUNCTIONS ###
@@ -742,7 +724,7 @@ class DSG:
         return self.__class__(_graph=graph_copy, _influence_matrix=self._influence_matrix,
                               _status_array=status_array if status_array is not None else self._status_array,
                               _choice_con_map=dec_con_map_copy, _des_var_values=self._des_var_values, _uncertain_parameter_values=self._uncertain_parameter_values,
-                              _metric_values=self._metric_values, _metric_statistics=self._metric_statistics, **kwargs)
+                              _metric_values=self._metric_values, **kwargs)
 
     def _mod_graph_adjust_kwargs(self, kwargs):
         pass
@@ -757,7 +739,7 @@ class DSG:
         self._mod_graph_adjust_kwargs(kwargs)
         return self.__class__(_graph=graph_copy, _influence_matrix=self._influence_matrix,
                               _status_array=self._status_array, _choice_con_map=self._choice_constraints,
-                              _des_var_values=self._des_var_values, _uncertain_parameter_values=self._uncertain_parameter_values, _metric_values=self._metric_values, _metric_statistics=self._metric_statistics,**kwargs)
+                              _des_var_values=self._des_var_values, _uncertain_parameter_values=self._uncertain_parameter_values, _metric_values=self._metric_values,**kwargs)
 
     """#########################################
     ### INCOMPATIBILITY CONSTRAINT FUNCTIONS ###

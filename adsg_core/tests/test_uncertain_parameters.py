@@ -36,7 +36,7 @@ def _seed():
 
 
 def test_uncertain_parameter_node_basics():
-    par_node = UncertainParameterNode('E', distribution=cp.Normal(10., 2.))
+    par_node = InputParameter('E', distribution=cp.Normal(10., 2.))
 
     assert par_node.name == 'E'
     assert par_node.idx is None
@@ -49,7 +49,7 @@ def test_uncertain_parameter_node_basics():
 
 def test_uncertain_parameter_node_nominal():
     """A parameter node without a distribution represents a fixed (deterministic) parameter"""
-    par_node = UncertainParameterNode('rho', nominal=1.225)
+    par_node = InputParameter('rho', nominal=1.225)
 
     assert not par_node.is_uncertain
     assert par_node.nominal == 1.225
@@ -57,7 +57,7 @@ def test_uncertain_parameter_node_nominal():
 
 
 def test_uncertain_parameter_node_sample_shape():
-    par_node = UncertainParameterNode('E', distribution=cp.Normal(10., 2.))
+    par_node = InputParameter('E', distribution=cp.Normal(10., 2.))
 
     for n in [1, 5, 100]:
         values = par_node.sample(n)
@@ -69,7 +69,7 @@ def test_uncertain_parameter_node_sample_shape():
 def test_uncertain_parameter_node_sample_statistics():
     """Sampling many times should recover the distribution moments"""
     mu, sigma = 10., 2.
-    par_node = UncertainParameterNode('E', distribution=cp.Normal(mu, sigma))
+    par_node = InputParameter('E', distribution=cp.Normal(mu, sigma))
 
     values = par_node.sample(20000)
     assert values.mean() == pytest.approx(mu, abs=.1)
@@ -77,7 +77,7 @@ def test_uncertain_parameter_node_sample_statistics():
 
 
 def test_uncertain_parameter_node_uniform():
-    par_node = UncertainParameterNode('t', distribution=cp.Uniform(2., 4.))
+    par_node = InputParameter('t', distribution=cp.Uniform(2., 4.))
 
     values = par_node.sample(5000)
     assert np.all(values >= 2.)
@@ -86,7 +86,7 @@ def test_uncertain_parameter_node_uniform():
 
 
 def test_uncertain_parameter_node_export_title():
-    par_node = UncertainParameterNode('E', distribution=cp.Normal(10., 2.))
+    par_node = InputParameter('E', distribution=cp.Normal(10., 2.))
     assert par_node.get_export_title()
 
     par_node.sampled_value = 11.5
@@ -95,8 +95,8 @@ def test_uncertain_parameter_node_export_title():
 
 def test_uncertain_parameter_nodes_are_distinct():
     """Nodes are identity-based, so two parameters with the same name are still different nodes"""
-    par_a = UncertainParameterNode('E', distribution=cp.Normal(0., 1.))
-    par_b = UncertainParameterNode('E', distribution=cp.Normal(0., 1.))
+    par_a = InputParameter('E', distribution=cp.Normal(0., 1.))
+    par_b = InputParameter('E', distribution=cp.Normal(0., 1.))
 
     assert par_a != par_b
     assert len({par_a, par_b}) == 2
@@ -115,8 +115,8 @@ def _dsg_with_parameters(n, par_nodes):
 
 
 def test_set_get_uncertain_parameter_value(n):
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(0., 1.))
-    par_b = UncertainParameterNode('B', distribution=cp.Normal(5., 1.))
+    par_a = InputParameter('A', distribution=cp.Normal(0., 1.))
+    par_b = InputParameter('B', distribution=cp.Normal(5., 1.))
     dsg = _dsg_with_parameters(n, [par_a, par_b])
 
     assert dsg.feasible
@@ -136,7 +136,7 @@ def test_set_get_uncertain_parameter_value(n):
 
 
 def test_uncertain_parameter_values_is_a_copy(n):
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(0., 1.))
+    par_a = InputParameter('A', distribution=cp.Normal(0., 1.))
     dsg = _dsg_with_parameters(n, [par_a])
 
     dsg.set_uncertain_parameter_value(par_a, 1.)
@@ -147,7 +147,7 @@ def test_uncertain_parameter_values_is_a_copy(n):
 
 
 def test_uncertain_parameter_values_survive_copy(n):
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(0., 1.))
+    par_a = InputParameter('A', distribution=cp.Normal(0., 1.))
     dsg = _dsg_with_parameters(n, [par_a])
 
     dsg.set_uncertain_parameter_value(par_a, .5)
@@ -157,8 +157,8 @@ def test_uncertain_parameter_values_survive_copy(n):
 
 
 def test_sample_parameters(n):
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(0., 1.))
-    par_b = UncertainParameterNode('B', distribution=cp.Uniform(10., 20.))
+    par_a = InputParameter('A', distribution=cp.Normal(0., 1.))
+    par_b = InputParameter('B', distribution=cp.Uniform(10., 20.))
     dsg = _dsg_with_parameters(n, [par_a, par_b])
 
     values = dsg.sample_parameters()
@@ -173,7 +173,7 @@ def test_sample_parameters(n):
 
 def test_sample_parameters_overwrites_previous_sample(n):
     """Repeated sampling on one instance keeps only the latest draw"""
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(0., 1.))
+    par_a = InputParameter('A', distribution=cp.Normal(0., 1.))
     dsg = _dsg_with_parameters(n, [par_a])
 
     first = dsg.sample_parameters()[par_a]
@@ -199,9 +199,9 @@ def test_sample_parameters_no_parameters(n):
 
 def test_parameter_node_conditional_existence(n):
     """A parameter node hung off a selection-choice option only exists if that option is selected"""
-    par_common = UncertainParameterNode('common', distribution=cp.Normal(0., 1.))
-    par_opt_a = UncertainParameterNode('only_a', distribution=cp.Normal(1., 1.))
-    par_opt_b = UncertainParameterNode('only_b', distribution=cp.Normal(2., 1.))
+    par_common = InputParameter('common', distribution=cp.Normal(0., 1.))
+    par_opt_a = InputParameter('only_a', distribution=cp.Normal(1., 1.))
+    par_opt_b = InputParameter('only_b', distribution=cp.Normal(2., 1.))
 
     dsg = BasicDSG()
     dsg.add_edges([
@@ -237,7 +237,7 @@ def test_parameter_node_conditional_existence(n):
 
 def test_parameter_values_isolated_between_instances(n):
     """Each derived instance carries its own sampled values"""
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(0., 1.))
+    par_a = InputParameter('A', distribution=cp.Normal(0., 1.))
 
     dsg = BasicDSG()
     dsg.add_edges([(n[0], par_a)])
@@ -265,7 +265,7 @@ def test_parameter_values_isolated_between_instances(n):
 
 def test_parameters_are_not_design_variables(n):
     """Uncertain parameters must never show up as design variables: the optimizer does not choose them"""
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(0., 1.))
+    par_a = InputParameter('A', distribution=cp.Normal(0., 1.))
     dv_node = DesignVariableNode('DV', bounds=(0., 1.))
 
     dsg = BasicDSG()
@@ -283,9 +283,9 @@ def test_parameters_are_not_design_variables(n):
 
 def test_processor_uncertain_parameter_nodes_sorted(n):
     """The processor exposes parameter nodes sorted by name (needs a sort key: DSGNode has no ordering)"""
-    par_c = UncertainParameterNode('C', distribution=cp.Normal(0., 1.))
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(0., 1.))
-    par_b = UncertainParameterNode('B', distribution=cp.Normal(0., 1.))
+    par_c = InputParameter('C', distribution=cp.Normal(0., 1.))
+    par_a = InputParameter('A', distribution=cp.Normal(0., 1.))
+    par_b = InputParameter('B', distribution=cp.Normal(0., 1.))
 
     dsg = BasicDSG()
     dsg.add_edges([(n[0], par_c), (n[0], par_a), (n[0], par_b)])
@@ -375,7 +375,7 @@ def test_process_stochastic_qoi_quantile_not_implemented(noop_evaluator):
 
 def test_uq_method_mc_statistics(n):
     """MC over a pass-through function recovers the parameter distribution moments"""
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(10., 2.))
+    par_a = InputParameter('A', distribution=cp.Normal(10., 2.))
     dsg = _dsg_with_parameters(n, [par_a])
 
     mean, std = UQMethod.mc(dsg, lambda dsg_, sample: sample[par_a], n=5000)
@@ -386,7 +386,7 @@ def test_uq_method_mc_statistics(n):
 
 def test_uq_method_mc_deterministic_function(n):
     """A function that ignores the parameters has zero variance"""
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(10., 2.))
+    par_a = InputParameter('A', distribution=cp.Normal(10., 2.))
     dsg = _dsg_with_parameters(n, [par_a])
 
     mean, std = UQMethod.mc(dsg, lambda dsg_, sample: 7., n=50)
@@ -397,7 +397,7 @@ def test_uq_method_mc_deterministic_function(n):
 
 def test_uq_method_mc_uses_sampled_values(n):
     """Every MC iteration draws a fresh sample and passes it to the evaluation function"""
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(0., 1.))
+    par_a = InputParameter('A', distribution=cp.Normal(0., 1.))
     dsg = _dsg_with_parameters(n, [par_a])
 
     seen = []
@@ -417,7 +417,7 @@ def test_uq_method_mc_uses_sampled_values(n):
 def test_uq_method_mc_scales_with_parameter_spread(n):
     """More parameter scatter propagates to more output scatter"""
     def _std_for(sigma):
-        par = UncertainParameterNode('A', distribution=cp.Normal(0., sigma))
+        par = InputParameter('A', distribution=cp.Normal(0., sigma))
         dsg = _dsg_with_parameters(n, [par])
         _, std = UQMethod.mc(dsg, lambda dsg_, sample: 2.*sample[par], n=4000)
         return std
@@ -427,8 +427,8 @@ def test_uq_method_mc_scales_with_parameter_spread(n):
 
 def test_uq_method_mc_multiple_parameters(n):
     """Independent parameters combine: var(a+b) = var(a) + var(b)"""
-    par_a = UncertainParameterNode('A', distribution=cp.Normal(0., 3.))
-    par_b = UncertainParameterNode('B', distribution=cp.Normal(0., 4.))
+    par_a = InputParameter('A', distribution=cp.Normal(0., 3.))
+    par_b = InputParameter('B', distribution=cp.Normal(0., 4.))
     dsg = _dsg_with_parameters(n, [par_a, par_b])
 
     mean, std = UQMethod.mc(dsg, lambda dsg_, sample: sample[par_a] + sample[par_b], n=20000)
@@ -474,10 +474,10 @@ class RobustBeamEvaluator(DSGEvaluator):
         self.n_evaluations = 0
         self.mc_samples_seen = []
 
-        self.par_load = UncertainParameterNode('load', distribution=cp.Normal(100., 20.))
+        self.par_load = InputParameter('load', distribution=cp.Normal(100., 20.))
         self.par_e = {
-            'steel': UncertainParameterNode('E_steel', distribution=cp.Normal(210., 10.)),
-            'alu': UncertainParameterNode('E_alu', distribution=cp.Normal(70., 10.)),
+            'steel': InputParameter('E_steel', distribution=cp.Normal(210., 10.)),
+            'alu': InputParameter('E_alu', distribution=cp.Normal(70., 10.)),
         }
         self.mass_node = MetricNode('mass', direction=-1, type_=MetricType.OBJECTIVE)
         self.deflection_node = MetricNode(
@@ -520,7 +520,7 @@ class RobustBeamEvaluator(DSGEvaluator):
                 return value
         raise RuntimeError('Thickness not set!')
 
-    def _deflection(self, dsg: DSGType, sample: Dict[UncertainParameterNode, float]) -> float:
+    def _deflection(self, dsg: DSGType, sample: Dict[InputParameter, float]) -> float:
         """Deflection under the sampled load and stiffness: delta = load / (E * t^3)"""
         material = self._selected_material(dsg)
         load = sample[self.par_load]

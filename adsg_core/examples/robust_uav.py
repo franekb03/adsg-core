@@ -145,11 +145,11 @@ class RobustUAVEvaluator(DSGEvaluator):
         self.k = k
 
         # Uncertain parameters: three always present, two conditional on the selected powertrain
-        self.par_payload = UncertainParameterNode('payload', distribution=cp.Normal(2., .3))
-        self.par_headwind = UncertainParameterNode('headwind', distribution=cp.Normal(4., 2.5))
-        self.par_drag = UncertainParameterNode('drag_factor', distribution=cp.Normal(1., .08))
-        self.par_eta_bat = UncertainParameterNode('eta_bat', distribution=cp.Normal(.92, .03))
-        self.par_bsfc = UncertainParameterNode('bsfc', distribution=cp.Normal(.42, .075))
+        self.par_payload = InputParameter('payload', distribution=cp.Normal(2., .3))
+        self.par_headwind = InputParameter('headwind', distribution=cp.Normal(4., 2.5))
+        self.par_drag = InputParameter('drag_factor', distribution=cp.Normal(1., .08))
+        self.par_eta_bat = InputParameter('eta_bat', distribution=cp.Normal(.92, .03))
+        self.par_bsfc = InputParameter('bsfc', distribution=cp.Normal(.42, .075))
 
         self.metric_node_map: Dict[str, MetricNode] = {}
         self.option_nodes: Dict[str, List[UAVOptionNode]] = {}
@@ -277,7 +277,7 @@ class RobustUAVEvaluator(DSGEvaluator):
         drag = drag_factor * self.airframe_drag[decisions['airframe']]
         return hover_power * (1. + .0016*drag*airspeed**2)
 
-    def _endurance(self, dsg: DSGType, sample: Dict[UncertainParameterNode, float]) -> float:
+    def _endurance(self, dsg: DSGType, sample: Dict[InputParameter, float]) -> float:
         """
         Endurance [min] for one Monte Carlo sample of the uncertain parameters.
 

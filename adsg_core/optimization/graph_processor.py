@@ -380,8 +380,8 @@ class GraphProcessor:
         return self.graph.ordered_choice_nodes(self.graph.des_var_nodes)
 
     @cached_property
-    def uncertain_parameter_nodes(self) -> List[UncertainParameterNode]:
-        return sorted(self.graph.get_nodes_by_type(UncertainParameterNode), key=lambda n: n.name)
+    def uncertain_parameter_nodes(self) -> List[InputParameter]:
+        return sorted(self.graph.get_nodes_by_type(InputParameter), key=lambda n: n.name)
 
     @cached_property
     def metric_nodes(self) -> List[MetricNode]:

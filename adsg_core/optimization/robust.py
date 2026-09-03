@@ -28,7 +28,10 @@ import functools
 import numpy as np
 from typing import *
 from concurrent.futures import wait, ProcessPoolExecutor, ThreadPoolExecutor
-from adsg_core.optimization.evaluator import DSGEvaluator
+
+from adsg_core import InputParameter
+from adsg_core.optimization.evaluator import DSGEvaluator, StochasticDSGEvaluator
+from adsg_core.optimization.problem import DSGDesignSpace
 from adsg_core.optimization.dv_output_defs import DesVar
 from adsg_core.optimization.graph_processor import GraphProcessor
 from adsg_core.optimization.assign_enc.time_limiter import run_timeout
@@ -36,6 +39,7 @@ from adsg_core.optimization.assign_enc.time_limiter import run_timeout
 try:
     from sb_arch_opt.problem import ArchOptProblemBase
     from sb_arch_opt.robust import StochasticArchOptProblem
+    from sb_arch_opt.uncertainty import *
     from sb_arch_opt.design_space import ArchDesignSpace
     from pymoo.core.variable import Variable, Real, Integer, Choice
 
@@ -53,8 +57,8 @@ except ImportError:
     class ArchOptProblemBase:
         pass
 
-__all__ = ['check_dependency', 'DSGDesignSpace', 'DSGArchOptProblem', 'HAS_SB_ARCH_OPT',
-           'ADSGDesignSpace', 'ADSGArchOptProblem']
+__all__ = ['check_dependency', 'DSGStochasticArchOptProblem', 'HAS_SB_ARCH_OPT',
+           'ADSGDesignSpace', 'ADSGStochasticArchOptProblem']
 
 log = logging.getLogger('adsg.opt')
 
@@ -64,124 +68,7 @@ def check_dependency():
         raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt')
 
 
-class DSGDesignSpace(ArchDesignSpace):
-    """
-    SBArchOpt design space implementation for a DSG design problem.
-    """
-    x_all_cutoff = 500000
-    x_all_timeout = 10  # sec
-
-    def __init__(self, processor: GraphProcessor):
-        if len(processor.des_vars) == 0:
-            raise ValueError('No design variables in optimization problem!')
-
-        self._processor = processor
-        super().__init__()
-
-    @property
-    def processor(self) -> GraphProcessor:
-        return self._processor
-
-    def is_explicit(self) -> bool:
-        return False
-
-    def _get_variables(self) -> List['Variable']:
-        """Returns the list of design variables (pymoo classes)"""
-        des_vars = []
-        for i, des_var in enumerate(self._processor.des_vars):
-            if des_var.is_discrete:
-                if des_var.is_ordinal:
-                    des_vars.append(Integer(bounds=(0, len(des_var.options)-1)))
-                else:
-                    des_vars.append(Choice(options=[ii for ii in range(len(des_var.options))]))
-            else:
-                des_vars.append(Real(bounds=tuple(des_var.bounds)))
-
-        return des_vars
-
-    def _is_conditionally_active(self) -> Optional[List[bool]]:
-        """Returns for each design variable whether it is conditionally active (i.e. may become inactive)"""
-        return self._processor.dv_is_conditionally_active
-
-    def _correct_x(self, x: np.ndarray, is_active: np.ndarray):
-        """
-        Fill the activeness matrix (n x nx) and if needed correct design vectors (n x nx) that are partially inactive.
-        Imputation of inactive variables is handled automatically.
-        """
-        is_discrete_mask = self.is_discrete_mask
-        for i, xi in enumerate(x):
-            x_arch = [int(val) if is_discrete_mask[j] else float(val) for j, val in enumerate(xi)]
-            _, x_imputed, is_active_arch = self._processor.get_graph(x_arch, create=False)
-            x[i, :] = x_imputed
-            is_active[i, :] = is_active_arch
-
-    def _quick_sample_discrete_x(self, n: int) -> Tuple[np.ndarray, np.ndarray]:
-        """Sample n discrete design vectors (also return is_active) without generating all design vectors first"""
-        return self._quick_random_sample_discrete_x(n)
-
-    @functools.lru_cache()
-    def _get_n_valid_discrete(self) -> Optional[int]:
-        """
-        Return the number of valid discrete design points (ignoring continuous dimensions); enables calculation of
-        the imputation ratio.
-        Valid discrete design points are discrete design points where value constraints are satisfied and where
-        inactive design variables are imputed/canonical (compare _get_n_correct_discrete).
-        """
-        return self._processor.get_n_valid_designs(with_fixed=True)
-
-    @functools.lru_cache()
-    def _get_n_active_cont_mean(self) -> Optional[float]:
-        """
-        Get the mean number of active continuous dimensions, as seen over all valid discrete design vectors.
-        """
-        _, _, _, _, n_dim_cont_mean, _ = \
-            self._processor.get_additional_dv_stats(with_fixed=True)
-        return n_dim_cont_mean
-
-    def _get_n_correct_discrete(self) -> Optional[int]:
-        """
-        Return the number of correct discrete design points (ignoring continuous dimensions); enables calculation of
-        the correction ratio.
-        Correct discrete design points are discrete design points where value constraints are satisfied, where however
-        inactive design variables can have any value (compare _get_n_valid_discrete).
-        """
-
-    def _get_n_active_cont_mean_correct(self) -> Optional[float]:
-        """
-        Get the mean number of active continuous dimensions, as seen over all valid discrete design vectors.
-        """
-
-    def _gen_all_discrete_x(self) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-        """Generate all possible discrete design vectors (if available). Returns design vectors and activeness
-        information."""
-
-        if self._get_n_valid_discrete() > self.x_all_cutoff:
-            log.debug(f'Not generating all design vectors because '
-                      f'{self._get_n_valid_discrete()} (n_x_discrete) > {self.x_all_cutoff}')
-            return
-
-        try:
-            log.debug('Generating all design vectors')
-            res = run_timeout(
-                self.x_all_timeout,
-                lambda: self._processor.get_all_discrete_x(with_fixed=True))
-            if res is None:
-                return
-            x, is_active = res
-            log.debug(f'Generated {x.shape[0]} design vectors')
-
-            is_cond_act = np.array(self._is_conditionally_active(), dtype=bool)
-            any_inactive, not_cond_active = np.any(~is_active, axis=0), ~is_cond_act
-            if np.any(any_inactive & not_cond_active):
-                i_where, = np.where(any_inactive & not_cond_active)
-                raise RuntimeError(f'Inconsistent conditionality vector for i_dv: {i_where}')
-
-            return x, is_active
-        except (MemoryError, TimeoutError) as e:
-            log.debug(f'Could not generate all design vectors: {e.__class__.__name__}')
-
-
-class DSGArchOptProblem(ArchOptProblemBase):
+class DSGStochasticArchOptProblem(StochasticArchOptProblem):
     """
     [SBArchOpt](https://sbarchopt.readthedocs.io/) wrapper for a DSG optimization problem. Note that under the
     hood, SBArchOpt uses [pymoo](https://pymoo.org/).
@@ -210,7 +97,12 @@ class DSGArchOptProblem(ArchOptProblemBase):
     ```
     """
 
-    def __init__(self, evaluator: DSGEvaluator, n_parallel=None, parallel_processes=True):
+    def __init__(self, evaluator: StochasticDSGEvaluator,
+                 uq_method: UQMethod,
+                 obj_measure: List[RobustMeasure] = None,
+                 constr_measure: List[RobustMeasure] = None,
+                 nan_policy: str = 'propagate',
+                 n_parallel=None, parallel_processes=True):
         check_dependency()
 
         self.evaluator = evaluator
@@ -221,13 +113,46 @@ class DSGArchOptProblem(ArchOptProblemBase):
         n_constr = len(evaluator.constraints)
 
         design_space = DSGDesignSpace(evaluator)
-        super().__init__(design_space, n_obj=n_objs, n_ieq_constr=n_constr)
+
+        parameter_nodes = self.evaluator.uncertain_parameter_nodes
+        parameter_space = self.get_parameter_space(parameter_nodes)
+
+
+        super().__init__(design_space, param_space=parameter_space, uq_method=uq_method, n_objs=n_objs, n_ieq_constr=n_constr,
+                         obj_measure=obj_measure, constr_measure=constr_measure, nan_policy=nan_policy)
 
         self.obj_is_max = [obj.dir.value > 0 for obj in evaluator.objectives]
         self.con_ref = [(con.dir > 0, con.ref) for con in evaluator.constraints]
 
+    @staticmethod
+    def get_parameter_space(input_parameters_nodes: List[InputParameter]) -> StochasticParameterSpace:
+        space = StochasticParameterSpace()
+        for param_node in input_parameters_nodes:
+            # TODO handle deterministic parameters in sbarchopt
+            param = StochasticParameter(param_node.name, param_node.distribution)
+            space.add_parameter(param)
+        return space
+
     def _arch_evaluate(self, x: np.ndarray, is_active_out: np.ndarray, f_out: np.ndarray, g_out: np.ndarray,
                        h_out: np.ndarray, *args, **kwargs):
+        super()._arch_evaluate(x, is_active_out, f_out, g_out, h_out, *args, **kwargs)
+
+        # Generate architectures
+        is_discrete_mask = self.is_discrete_mask
+        dsg_instances = []
+        for i, xi in enumerate(x):
+            x_arch = [int(val) if is_discrete_mask[j] else float(val) for j, val in enumerate(xi)]
+            dsg_instance, _, _ = self.evaluator.get_graph(x_arch)
+
+            result = self.stochastic_results[i].get_list
+            metric_nodes = dsg_instance.metric_nodes
+            # Set metric values
+            for j, metric_node in enumerate(metric_nodes):
+                dsg_instance.set_metric_value(metric_node, result[j])
+
+
+    def _arch_evaluate_sample(self, x: np.ndarray, is_active: np.ndarray, f_out: np.ndarray, g_out: np.ndarray,
+                       h_out: np.ndarray, *args, sample:np.ndarray, **kwargs):
         # Correct integer design variables
         self.design_space.round_x_discrete(x)
 
@@ -239,7 +164,7 @@ class DSGArchOptProblem(ArchOptProblemBase):
             dsg_instance, x_imputed, is_active_arch = self.evaluator.get_graph(x_arch)
             dsg_instances.append(dsg_instance)
             x[i, :] = x_imputed
-            is_active_out[i, :] = is_active_arch
+            is_active[i, :] = is_active_arch
 
         # Evaluate architectures
         if self.n_parallel is not None and self.n_parallel > 1:
@@ -274,4 +199,4 @@ class DSGArchOptProblem(ArchOptProblemBase):
 
 
 ADSGDesignSpace = DSGDesignSpace  # Backward compatibility
-ADSGArchOptProblem = DSGArchOptProblem  # Backward compatibility
+ADSGStochasticArchOptProblem = DSGStochasticArchOptProblem  # Backward compatibility

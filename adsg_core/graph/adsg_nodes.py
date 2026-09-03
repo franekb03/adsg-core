@@ -31,10 +31,10 @@ from typing import *
 import networkx as nx
 from collections import OrderedDict
 from adsg_core.graph.graph_edges import *
-import chaospy as cp
+import openturns as ot
 from dataclasses import dataclass
 __all__ = ['DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
-           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'UncertainParameterNode', 'MetricNode', 'MetricType', 'StochasticMetricType', 'MetricStatistics','EdgeType', 'EdgeTuple',
+           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'InputParameter', 'MetricNode', 'MetricType', 'StochasticMetricType', 'EdgeType', 'EdgeTuple',
            'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode']
 
 
@@ -441,31 +441,32 @@ class DesignVariableNode(DSGNode):
         return f'DV[{self.name}]'
 
 
-class UncertainParameterNode(DSGNode):
+class InputParameter(DSGNode):
     """
-    Node representing uncertainty parameter with a given distribution.
+    Node representing input parameter that can be either deterministic or stochastic.
     """
 
-    def __init__(self, name, nominal=None, distribution: cp.Distribution=None, idx=None):
+    def __init__(self, name, nominal=None, distribution: ot.Distribution=None, idx=None):
 
         self.name = name
         self.idx = idx
         self.distribution = distribution
         self.nominal = nominal
         self.sampled_value = None
-        super(UncertainParameterNode, self).__init__()
+        super(InputParameter, self).__init__()
 
     @property
     def is_uncertain(self):
         return self.distribution is not None
 
-    def sample(self, n: int) -> np.ndarray:
-        if self.distribution is None:
-            if self.nominal is None:
-                raise ValueError(f'Cannot sample parameter {self.name!r}: no distribution or nominal value set')
-            return np.full(n, float(self.nominal))
-        samples = np.asarray(self.distribution.sample(n))
-        return samples.reshape((n,))
+    # def sample(self, n: int) -> np.ndarray:
+    #     if self.distribution is None:
+    #         if self.nominal is None:
+    #             raise ValueError(f'Cannot sample parameter {self.name!r}: no distribution or nominal value set')
+    #         return np.full(n, float(self.nominal))
+    #     samples = np.asarray(self.distribution.sample(n))
+    #     return samples.reshape((n,))
+
     def get_export_title(self) -> str:
         if not self.is_uncertain:
             return f'{self.name} = {self.nominal}'
@@ -475,7 +476,7 @@ class UncertainParameterNode(DSGNode):
         return _INP_OUT_COLOR
 
     def str_context(self):
-        return f'PARAM.{self.name}.{self.idx}.{self.dist!r}.{cp.E(self.distribution)}'
+        return f'PARAM.{self.name}.{self.idx}.{self.dist!r}.{ot.computeMean(self.distribution)}'
 
     def __str__(self):
         return f'PARAM[{self.name}]'
@@ -492,23 +493,23 @@ class StochasticMetricType(enum.Flag):
     MARGIN = enum.auto()
     QUANTILE = enum.auto()
 
-@dataclass(frozen=True)
-class MetricStatistics:
-    """
-    Raw statistics of a stochastic metric, as produced by an uncertainty propagation method and *before* being
-    reduced to the single value the optimizer sees (see `DSGEvaluator.process_stochastic_qoi`).
-
-    Stored per DSG instance, so that the mean and standard deviation behind a reduced metric value remain
-    available after evaluation.
-    """
-    mean: float
-    std: float
-    method: Optional[str] = None  # Uncertainty propagation method used, e.g. 'MC'
-    n_samples: Optional[int] = None
-    quantiles: Optional[Dict[float, float]] = None  # Reserved for StochasticMetricType.QUANTILE
-
-    def __str__(self):
-        return f'mean={self.mean:.4g}, std={self.std:.4g}'
+# @dataclass(frozen=True)
+# class MetricStatistics:
+#     """
+#     Raw statistics of a stochastic metric, as produced by an uncertainty propagation method and *before* being
+#     reduced to the single value the optimizer sees (see `DSGEvaluator.process_stochastic_qoi`).
+#
+#     Stored per DSG instance, so that the mean and standard deviation behind a reduced metric value remain
+#     available after evaluation.
+#     """
+#     mean: float
+#     std: float
+#     method: Optional[str] = None  # Uncertainty propagation method used, e.g. 'MC'
+#     n_samples: Optional[int] = None
+#     quantiles: Optional[Dict[float, float]] = None  # Reserved for StochasticMetricType.QUANTILE
+#
+#     def __str__(self):
+#         return f'mean={self.mean:.4g}, std={self.std:.4g}'
 
 
 class MetricNode(DSGNode):
@@ -527,16 +528,13 @@ class MetricNode(DSGNode):
     - `CONSTRAINT`: metric is a constraint (provide a direction and a reference value)
     """
 
-    def __init__(self, name, direction: int = None, ref: float = None, idx=None, type_=None, stochastic_=None, k=None):
+    def __init__(self, name, direction: int = None, ref: float = None, idx=None, type_=None):
         self.name = name
         self.idx = idx
         self.dir = direction  # -1 for min/lte, 1 for max/gte
         self.ref = ref  # Reference value for constraint
         self.type: Optional[MetricType] = type_
-        self.stochastic: Optional[StochasticMetricType] = stochastic_
-        self.k = k
         self.assigned_value = None  # Only for export!
-        self.assigned_statistics: Optional[MetricStatistics] = None  # Only for export!
         super(MetricNode, self).__init__()
 
     def get_export_title(self) -> str:
