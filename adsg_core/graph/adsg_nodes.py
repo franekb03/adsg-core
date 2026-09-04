@@ -446,18 +446,16 @@ class InputParameter(DSGNode):
     Node representing input parameter that can be either deterministic or stochastic.
     """
 
-    def __init__(self, name, nominal=None, distribution: ot.Distribution=None, idx=None):
+    def __init__(self, name, idx=None):
 
         self.name = name
         self.idx = idx
-        self.distribution = distribution
-        self.nominal = nominal
-        self.sampled_value = None
+        self.assigned_value = None      # Only for export
         super(InputParameter, self).__init__()
 
-    @property
-    def is_uncertain(self):
-        return self.distribution is not None
+    # @property
+    # def is_uncertain(self):
+    #     return self.distribution is not None
 
     # def sample(self, n: int) -> np.ndarray:
     #     if self.distribution is None:
@@ -468,15 +466,13 @@ class InputParameter(DSGNode):
     #     return samples.reshape((n,))
 
     def get_export_title(self) -> str:
-        if not self.is_uncertain:
-            return f'{self.name} = {self.nominal}'
-        return f'{self.name} = {self.distribution}'
+        return f'{self.name} = {self.assigned_value}'
 
     def get_export_color(self) -> str:
         return _INP_OUT_COLOR
 
     def str_context(self):
-        return f'PARAM.{self.name}.{self.idx}.{self.dist!r}.{ot.computeMean(self.distribution)}'
+        return f'PARAM.{self.name}'
 
     def __str__(self):
         return f'PARAM[{self.name}]'

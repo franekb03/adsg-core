@@ -120,40 +120,40 @@ def test_set_get_uncertain_parameter_value(n):
     dsg = _dsg_with_parameters(n, [par_a, par_b])
 
     assert dsg.feasible
-    assert set(dsg.uncertain_parameter_nodes) == {par_a, par_b}
+    assert set(dsg.input_parameter_nodes) == {par_a, par_b}
 
-    assert dsg.uncertain_parameter_value(par_a) is None
-    dsg.set_uncertain_parameter_value(par_a, .5)
-    assert dsg.uncertain_parameter_value(par_a) == .5
-    assert dsg.uncertain_parameter_values == {par_a: .5}
+    assert dsg.input_parameter_value(par_a) is None
+    dsg.set_input_parameter_value(par_a, .5)
+    assert dsg.input_parameter_value(par_a) == .5
+    assert dsg.input_parameter_values == {par_a: .5}
 
-    dsg.set_uncertain_parameter_value(par_b, math.nan)
-    assert math.isnan(dsg.uncertain_parameter_value(par_b))
+    dsg.set_input_parameter_value(par_b, math.nan)
+    assert math.isnan(dsg.input_parameter_value(par_b))
 
-    dsg.reset_uncertain_parameter_values()
-    assert dsg.uncertain_parameter_values == {}
-    assert dsg.uncertain_parameter_value(par_a) is None
+    dsg.reset_input_parameter_values()
+    assert dsg.input_parameter_values == {}
+    assert dsg.input_parameter_value(par_a) is None
 
 
 def test_uncertain_parameter_values_is_a_copy(n):
     par_a = InputParameter('A', distribution=cp.Normal(0., 1.))
     dsg = _dsg_with_parameters(n, [par_a])
 
-    dsg.set_uncertain_parameter_value(par_a, 1.)
-    values = dsg.uncertain_parameter_values
+    dsg.set_input_parameter_value(par_a, 1.)
+    values = dsg.input_parameter_values
     values[par_a] = 99.
 
-    assert dsg.uncertain_parameter_value(par_a) == 1.
+    assert dsg.input_parameter_value(par_a) == 1.
 
 
 def test_uncertain_parameter_values_survive_copy(n):
     par_a = InputParameter('A', distribution=cp.Normal(0., 1.))
     dsg = _dsg_with_parameters(n, [par_a])
 
-    dsg.set_uncertain_parameter_value(par_a, .5)
+    dsg.set_input_parameter_value(par_a, .5)
     dsg_copy = dsg.copy()
 
-    assert dsg_copy.uncertain_parameter_value(par_a) == .5
+    assert dsg_copy.input_parameter_value(par_a) == .5
 
 
 def test_sample_parameters(n):
@@ -168,7 +168,7 @@ def test_sample_parameters(n):
     assert 10. <= values[par_b] <= 20.
 
     # Sampled values are stored on the graph instance
-    assert dsg.uncertain_parameter_values == values
+    assert dsg.input_parameter_values == values
 
 
 def test_sample_parameters_overwrites_previous_sample(n):
@@ -180,7 +180,7 @@ def test_sample_parameters_overwrites_previous_sample(n):
     second = dsg.sample_parameters()[par_a]
 
     assert first != second
-    assert dsg.uncertain_parameter_value(par_a) == second
+    assert dsg.input_parameter_value(par_a) == second
 
 
 def test_sample_parameters_no_parameters(n):
@@ -188,7 +188,7 @@ def test_sample_parameters_no_parameters(n):
     dsg.add_edges([(n[0], n[1])])
     dsg = dsg.set_start_nodes({n[0]})
 
-    assert dsg.uncertain_parameter_nodes == []
+    assert dsg.input_parameter_nodes == []
     assert dsg.sample_parameters() == {}
 
 
@@ -219,7 +219,7 @@ def test_parameter_node_conditional_existence(n):
     for opt_idx in range(2):
         graph, _, _ = processor.get_graph([opt_idx])
 
-        par_nodes = set(graph.uncertain_parameter_nodes)
+        par_nodes = set(graph.input_parameter_nodes)
         assert par_common in par_nodes
         seen |= par_nodes
 
@@ -248,14 +248,14 @@ def test_parameter_values_isolated_between_instances(n):
     graph_a, _, _ = processor.get_graph([0])
     graph_b, _, _ = processor.get_graph([1])
 
-    graph_a.set_uncertain_parameter_value(par_a, 1.)
-    graph_b.set_uncertain_parameter_value(par_a, 2.)
+    graph_a.set_input_parameter_value(par_a, 1.)
+    graph_b.set_input_parameter_value(par_a, 2.)
 
-    assert graph_a.uncertain_parameter_value(par_a) == 1.
-    assert graph_b.uncertain_parameter_value(par_a) == 2.
+    assert graph_a.input_parameter_value(par_a) == 1.
+    assert graph_b.input_parameter_value(par_a) == 2.
 
     # The template graph is never touched by evaluating instances
-    assert dsg.uncertain_parameter_value(par_a) is None
+    assert dsg.input_parameter_value(par_a) is None
 
 
 """#################################
@@ -405,7 +405,7 @@ def test_uq_method_mc_uses_sampled_values(n):
     def _func(dsg_, sample):
         seen.append(sample[par_a])
         # The sample is also readable off the graph instance
-        assert dsg_.uncertain_parameter_value(par_a) == sample[par_a]
+        assert dsg_.input_parameter_value(par_a) == sample[par_a]
         return sample[par_a]
 
     UQMethod.mc(dsg, _func, n=25)
@@ -540,7 +540,7 @@ class RobustBeamEvaluator(DSGEvaluator):
         for stochastic_node in stochastic_nodes:
             value_map.update(self.propagate_uncertainty("MC", self._deflection, dsg, stochastic_node, n=self.n_mc))
 
-        self.mc_samples_seen.append(len(dsg.uncertain_parameter_values))
+        self.mc_samples_seen.append(len(dsg.input_parameter_values))
         value_map[self.mass_node] = mass
         return value_map
 
@@ -579,8 +579,8 @@ def test_robust_problem_monte_carlo_per_design_point(robust_evaluator):
         assert all(np.isfinite(obj))
 
         # Only the parameters existing in this architecture were sampled
-        assert len(graph.uncertain_parameter_values) == 2
-        assert robust_evaluator.par_load in graph.uncertain_parameter_values
+        assert len(graph.input_parameter_values) == 2
+        assert robust_evaluator.par_load in graph.input_parameter_values
 
     assert robust_evaluator.n_evaluations == 2
 
@@ -673,7 +673,7 @@ def test_robust_problem_over_all_discrete_design_points(robust_evaluator):
 
         obj, con = robust_evaluator.evaluate(graph)
         assert all(np.isfinite(obj))
-        assert len(graph.uncertain_parameter_values) == 2
+        assert len(graph.input_parameter_values) == 2
         results.append(obj)
 
     assert len(results) == 2

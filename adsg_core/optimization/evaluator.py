@@ -28,13 +28,13 @@ from typing import *
 import numpy as np
 
 from adsg_core.graph.adsg import DSGType
-from adsg_core.graph.adsg_nodes import MetricNode, StochasticMetricType, InputParameter
+from adsg_core.graph.adsg_nodes import MetricNode, StochasticMetricType
 from adsg_core.optimization.dv_output_defs import *
 from adsg_core.optimization.graph_processor import *
 from adsg_core.optimization.uq_method import *
 from sb_arch_opt.uncertainty import *
 
-__all__ = ['DSGEvaluator', 'ADSGEvaluator']
+__all__ = ['DSGEvaluator', 'ADSGEvaluator', 'StochasticDSGEvaluator', 'StochasticADSGEvaluator']
 
 
 class DSGEvaluator(GraphProcessor):
@@ -50,62 +50,9 @@ class DSGEvaluator(GraphProcessor):
         from adsg_core.optimization.problem import DSGArchOptProblem
         return DSGArchOptProblem(self, n_parallel=n_parallel, parallel_processes=parallel_processes)
 
-    def get_stochastic_problem(self, uq_method: UQMethod,
-                obj_measure: List[RobustMeasure] = None,
-                constr_measure: List[RobustMeasure] = None,
-                nan_policy: str = 'propagate',
-                n_parallel=None, parallel_processes=True):
-
-        from adsg_core.optimization.robust import DSGStochasticArchOptProblem
-        return DSGStochasticArchOptProblem(self,
-                uq_method,
-                obj_measure,
-                constr_measure,
-                nan_policy,
-                n_parallel=n_parallel, parallel_processes=parallel_processes)
-
     def _choose_metric_type(self, objective: Objective, constraint: Constraint) -> Union[Objective, Constraint]:
         raise RuntimeError(f'Metric {objective.name} can either be an objective or a constraint! '
                            f'Specify the metric type using node.type = MetricType.x')
-
-    def process_stochastic_qoi(self, metric_node: MetricNode, mean: float, std: float) -> float:
-        """
-        Reduce statistics of stochastic metric to the single value the optimizer sees.
-        """
-        if metric_node.stochastic in (None, StochasticMetricType.NONE, StochasticMetricType.MEAN):
-            return mean
-
-        if metric_node.stochastic == StochasticMetricType.MARGIN:
-            if metric_node.dir is None:
-                raise ValueError(f'A direction is needed for a margin metric: {metric_node.name}')
-            if metric_node.k is None or metric_node.k < 0:
-                raise ValueError(f'A positive k is needed for a margin metric: {metric_node.name}')
-            return mean - np.sign(metric_node.dir) * metric_node.k * std
-
-        if metric_node.stochastic == StochasticMetricType.QUANTILE:
-            raise NotImplementedError
-
-        raise ValueError(f'Unknown stochastic metric type: {metric_node.stochastic}')
-
-
-    def propagate_uncertainty(self, uq_method: str, func, dsg: DSGType, metric_node: MetricNode, **kwargs) -> Dict[MetricNode, float]:
-        """
-        This function propagates uncertainty using a UQ method for a single design vector.
-        This function should be called inside _evaluate() per each objective
-        Input:
-            - uq_method: UQMethod instance
-            - func: Objective/Constraint function with the following format func(dsg: DSGType, param_sample: Dict[UncertainParameterNode, float]) -> float
-            - dsg: DSG instance
-            - metric_node: MetricNode instance
-            **kwargs: N samples for Monte Carlo evaluation or any other relevant parameters for the chosen UQ method.
-        Output:
-            - Returns a mapping from metric node to float
-        """
-        stochastic_metric_node = {}
-        mean, std = UQMethod.run(dsg, uq_method, func, **kwargs)
-        dsg.set_metric_statistics(metric_node, mean=mean, std=std, method=uq_method, n_samples=kwargs.get('n'))
-        stochastic_metric_node[metric_node] = self.process_stochastic_qoi(metric_node=metric_node, mean=mean, std=std)
-        return stochastic_metric_node
 
     def evaluate(self, dsg: DSGType) -> Tuple[List[float], List[float]]:
         """
@@ -138,7 +85,7 @@ class DSGEvaluator(GraphProcessor):
         raise NotImplementedError
 
 
-class StochasticDSGEvaluator(DSGEvaluator):
+class StochasticDSGEvaluator(GraphProcessor):
     """
     Base class for implementing an evaluator that directly evaluates DSG instances.
     Override _evaluate to implement the evaluation.
@@ -146,11 +93,12 @@ class StochasticDSGEvaluator(DSGEvaluator):
     Extends `GraphProcessor`, so all its functions are also available.
     """
 
-    def get_problem(self, n_parallel=None, parallel_processes=True, uq_method: UQMethod=MonteCarlo(n=100, seed=None),
-                obj_measure: List[RobustMeasure] = None,
-                constr_measure: List[RobustMeasure] = None,
-                nan_policy: str = 'propagate'
-                ):
+    def get_problem(self,
+                    uq_method: UQMethod,
+                    obj_measure: List[RobustMeasure] = None,
+                    constr_measure: List[RobustMeasure] = None,
+                    nan_policy = None,
+                    n_parallel=None, parallel_processes=True):
 
         from adsg_core.optimization.robust import DSGStochasticArchOptProblem
         return DSGStochasticArchOptProblem(self,
@@ -160,57 +108,34 @@ class StochasticDSGEvaluator(DSGEvaluator):
                 nan_policy,
                 n_parallel=n_parallel, parallel_processes=parallel_processes)
 
-
-    def process_stochastic_qoi(self, metric_node: MetricNode, mean: float, std: float) -> float:
-        """
-        Reduce statistics of stochastic metric to the single value the optimizer sees.
-        """
-        if metric_node.stochastic in (None, StochasticMetricType.NONE, StochasticMetricType.MEAN):
-            return mean
-
-        if metric_node.stochastic == StochasticMetricType.MARGIN:
-            if metric_node.dir is None:
-                raise ValueError(f'A direction is needed for a margin metric: {metric_node.name}')
-            if metric_node.k is None or metric_node.k < 0:
-                raise ValueError(f'A positive k is needed for a margin metric: {metric_node.name}')
-            return mean - np.sign(metric_node.dir) * metric_node.k * std
-
-        if metric_node.stochastic == StochasticMetricType.QUANTILE:
-            raise NotImplementedError
-
-        raise ValueError(f'Unknown stochastic metric type: {metric_node.stochastic}')
-
-
-    def propagate_uncertainty(self, uq_method: str, func, dsg: DSGType, metric_node: MetricNode, **kwargs) -> Dict[MetricNode, float]:
-        """
-        This function propagates uncertainty using a UQ method for a single design vector.
-        This function should be called inside _evaluate() per each objective
-        Input:
-            - uq_method: UQMethod instance
-            - func: Objective/Constraint function with the following format func(dsg: DSGType, param_sample: Dict[UncertainParameterNode, float]) -> float
-            - dsg: DSG instance
-            - metric_node: MetricNode instance
-            **kwargs: N samples for Monte Carlo evaluation or any other relevant parameters for the chosen UQ method.
-        Output:
-            - Returns a mapping from metric node to float
-        """
-        stochastic_metric_node = {}
-        mean, std = UQMethod.run(dsg, uq_method, func, **kwargs)
-        dsg.set_metric_statistics(metric_node, mean=mean, std=std, method=uq_method, n_samples=kwargs.get('n'))
-        stochastic_metric_node[metric_node] = self.process_stochastic_qoi(metric_node=metric_node, mean=mean, std=std)
-        return stochastic_metric_node
-
-    def evaluate(self, dsg: DSGType, parameters: np.ndarray = None) -> Tuple[List[float], List[float]]:
+    def evaluate(self, dsg: DSGType, samples: np.ndarray, uq_method: UQMethod = None) -> Tuple[List[float], List[float]]:
         """
         Evaluate a DSG instance. Returns a list of objective values and a list of constraint values.
         """
 
         # Evaluate the DSG instance
         metric_nodes = dsg.metric_nodes
-        value_map = self._evaluate(dsg, metric_nodes, parameters)
+        parameters_space = dsg.stochastic_space()
 
+        n_s = samples.shape[0]
 
+        f_s = np.zeros((n_s, len(self.objectives))) * np.nan
+        g_s = np.zeros((n_s, len(self.constraints))) * np.nan
 
+        # Evaluate all design vectors for each realization of the uncertain parameters: the loop is over samples,
+        # not over design points, so that the evaluation function stays vectorized over design points
+        for sample_i in range(n_s):
+            metric_values = list(self._evaluate(dsg, metric_nodes, sample_i).values())
+            f_s[sample_i, :] = metric_values[:len(self.objectives)]
+            g_s[sample_i, :] = metric_values[len(self.objectives):]
+
+        # Reduce the sampled responses of each design point to the values the optimizer sees
+        stochastic_results = uq_method.process_results(np.concatenate([f_s, g_s], axis=1), parameters_space)
+
+        for i, metric_node in enumerate(metric_nodes):
+            dsg.set_metric_value(metric_node, stochastic_results[i])
+
+        value_map = dsg.metric_values
         # Associate values to objectives
         objective_values = [value_map.get(objective.node, math.nan) for objective in self.objectives]
 
@@ -231,3 +156,4 @@ class StochasticDSGEvaluator(DSGEvaluator):
 
 
 ADSGEvaluator = DSGEvaluator  # Backward compatibility
+StochasticADSGEvaluator = StochasticDSGEvaluator

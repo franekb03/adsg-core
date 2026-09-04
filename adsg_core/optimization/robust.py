@@ -119,7 +119,7 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
 
 
         super().__init__(design_space, param_space=parameter_space, uq_method=uq_method, n_objs=n_objs, n_ieq_constr=n_constr,
-                         obj_measure=obj_measure, constr_measure=constr_measure, nan_policy=nan_policy)
+                         obj_measure=obj_measure, ieq_constr_measure=constr_measure, nan_policy=nan_policy)
 
         self.obj_is_max = [obj.dir.value > 0 for obj in evaluator.objectives]
         self.con_ref = [(con.dir > 0, con.ref) for con in evaluator.constraints]
@@ -135,24 +135,7 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
 
     def _arch_evaluate(self, x: np.ndarray, is_active_out: np.ndarray, f_out: np.ndarray, g_out: np.ndarray,
                        h_out: np.ndarray, *args, **kwargs):
-        super()._arch_evaluate(x, is_active_out, f_out, g_out, h_out, *args, **kwargs)
 
-        # Generate architectures
-        is_discrete_mask = self.is_discrete_mask
-        dsg_instances = []
-        for i, xi in enumerate(x):
-            x_arch = [int(val) if is_discrete_mask[j] else float(val) for j, val in enumerate(xi)]
-            dsg_instance, _, _ = self.evaluator.get_graph(x_arch)
-
-            result = self.stochastic_results[i].get_list
-            metric_nodes = dsg_instance.metric_nodes
-            # Set metric values
-            for j, metric_node in enumerate(metric_nodes):
-                dsg_instance.set_metric_value(metric_node, result[j])
-
-
-    def _arch_evaluate_sample(self, x: np.ndarray, is_active: np.ndarray, f_out: np.ndarray, g_out: np.ndarray,
-                       h_out: np.ndarray, *args, sample:np.ndarray, **kwargs):
         # Correct integer design variables
         self.design_space.round_x_discrete(x)
 
@@ -164,13 +147,17 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
             dsg_instance, x_imputed, is_active_arch = self.evaluator.get_graph(x_arch)
             dsg_instances.append(dsg_instance)
             x[i, :] = x_imputed
-            is_active[i, :] = is_active_arch
+            is_active_out[i, :] = is_active_arch
+
+        # Sample parameter space
+
+        samples = self.uq_method.get_samples(self.param_space)
 
         # Evaluate architectures
         if self.n_parallel is not None and self.n_parallel > 1:
             executor_class = ProcessPoolExecutor if self.parallel_processes else ThreadPoolExecutor
             with executor_class(max_workers=self.n_parallel) as executor:
-                futures = [executor.submit(self.evaluator.evaluate, dsg) for dsg in dsg_instances]
+                futures = [executor.submit(self.evaluator.evaluate, dsg, samples) for dsg in dsg_instances]
 
                 wait(futures)
                 results = [fut.result() for fut in futures]

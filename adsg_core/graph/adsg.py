@@ -22,7 +22,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+from functools import cached_property
+
 import numpy as np
+import openturns as ot
 from typing import *
 import networkx as nx
 from natsort import natsorted
@@ -37,7 +40,7 @@ from adsg_core.graph.choice_constraints import *
 
 __all__ = ['DSG', 'EdgeType', 'CDVNode', 'ChoiceConstraint', 'ChoiceConstraintType', 'DSGType', 'ADSG', 'ADSGType']
 
-from sb_arch_opt.uncertainty import StochasticOutput
+from sb_arch_opt.uncertainty import StochasticOutput, StochasticParameterSpace, StochasticParameter
 
 
 class DSG:
@@ -51,7 +54,7 @@ class DSG:
     _taken_single_choices = []
 
     def __init__(self, _graph=None, _influence_matrix=None, _status_array=None, _choice_con_map=None,
-                 _des_var_values=None, _uncertain_parameter_values=None, _metric_values=None, **_):
+                 _des_var_values=None, _input_parameter_values=None, _metric_values=None, **_):
         self._graph = _graph or self._get_empty_graph()
         self._choice_constraints: List[ChoiceConstraint] = _choice_con_map or []
         self._influence_matrix: Optional[InfluenceMatrix] = _influence_matrix
@@ -59,7 +62,7 @@ class DSG:
 
         self._update_connector_grouping_degrees()
         self._des_var_values: Dict[DesignVariableNode, Union[float, int]] = (_des_var_values or {}).copy()
-        self._uncertain_parameter_values: Dict[InputParameter, float] = (_uncertain_parameter_values or {}).copy()
+        self._input_parameter_values: Dict[InputParameter, Union[ot.Distribution, float]] = (_input_parameter_values or {}).copy()
         self._metric_values: Dict[MetricNode, float] = (_metric_values or {}).copy()
 
     @staticmethod
@@ -188,8 +191,8 @@ class DSG:
 
         for node in self.des_var_nodes:
             node.assigned_value = self.des_var_value(node)
-        for node in self.uncertain_parameter_nodes:
-            node.assigned_value = self.uncertain_parameter_value(node)
+        for node in self.input_parameter_nodes:
+            node.assigned_value = self.input_parameter_value(node)
         for node in self.metric_nodes:
             node.assigned_value = self.metric_value(node)
             node.assigned_statistics = self.metric_statistics(node)
@@ -290,33 +293,39 @@ class DSG:
         self._des_var_values = {}
 
     @property
-    def uncertain_parameter_nodes(self) -> List[InputParameter]:
+    def input_parameter_nodes(self) -> List[InputParameter]:
         return self.get_nodes_by_type(InputParameter)
 
-    def set_uncertain_parameter_value(self, parameter_node: InputParameter, value: float):
+    def set_input_parameter_value(self, parameter_node: InputParameter, value: Union[ot.Distribution, float]):
         """
         Set the value of a parameter node.
         """
-        self._uncertain_parameter_values[parameter_node] = value
+        self._input_parameter_values[parameter_node] = value
 
-    def uncertain_parameter_value(self, parameter_node: InputParameter) -> Optional[float]:
-        return self._uncertain_parameter_values.get(parameter_node)
+    def input_parameter_value(self, parameter_node: InputParameter) -> Optional[float]:
+        return self._input_parameter_values.get(parameter_node)
 
     @property
-    def uncertain_parameter_values(self):
-        return self._uncertain_parameter_values.copy()
+    def input_parameter_values(self):
+        return self._input_parameter_values.copy()
 
-    def reset_uncertain_parameter_values(self):
-        self._uncertain_parameter_values = {}
+    def reset_input_parameter_values(self):
+        self._input_parameter_values = {}
+
+    @cached_property
+    def stochastic_space(self) -> StochasticParameterSpace:
+        space = StochasticParameterSpace()
+        param_nodes = self.input_parameter_nodes
+        for param_node in param_nodes:
+            # TODO handle deterministic parameters in sbarchopt
+            value = self.input_parameter_value(param_node)
+            param = StochasticParameter(param_node.name, value)
+            space.add_parameter(param)
+        return space
 
     def sample_parameters(self) -> Dict[InputParameter, float]:
         """Sample all parameter values present in the DSG instance and set the value on graph"""
-        values = {}
-        for parameter_node in self.uncertain_parameter_nodes:
-            value = parameter_node.sample(n=1)[0]
-            self.set_uncertain_parameter_value(parameter_node, value)
-            values[parameter_node] = value
-        return values
+
 
     @property
     def metric_nodes(self) -> List[MetricNode]:
@@ -723,7 +732,7 @@ class DSG:
         dec_con_map_copy = self._choice_constraints.copy()
         return self.__class__(_graph=graph_copy, _influence_matrix=self._influence_matrix,
                               _status_array=status_array if status_array is not None else self._status_array,
-                              _choice_con_map=dec_con_map_copy, _des_var_values=self._des_var_values, _uncertain_parameter_values=self._uncertain_parameter_values,
+                              _choice_con_map=dec_con_map_copy, _des_var_values=self._des_var_values, _uncertain_parameter_values=self._input_parameter_values,
                               _metric_values=self._metric_values, **kwargs)
 
     def _mod_graph_adjust_kwargs(self, kwargs):
@@ -739,7 +748,7 @@ class DSG:
         self._mod_graph_adjust_kwargs(kwargs)
         return self.__class__(_graph=graph_copy, _influence_matrix=self._influence_matrix,
                               _status_array=self._status_array, _choice_con_map=self._choice_constraints,
-                              _des_var_values=self._des_var_values, _uncertain_parameter_values=self._uncertain_parameter_values, _metric_values=self._metric_values,**kwargs)
+                              _des_var_values=self._des_var_values, _uncertain_parameter_values=self._input_parameter_values, _metric_values=self._metric_values, **kwargs)
 
     """#########################################
     ### INCOMPATIBILITY CONSTRAINT FUNCTIONS ###
