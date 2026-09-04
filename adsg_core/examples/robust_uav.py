@@ -23,14 +23,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 import numpy as np
+import openturns as ot
 from typing import *
-import chaospy as cp
 
 from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_basic import *
 from adsg_core.graph.adsg_nodes import *
-from adsg_core.optimization.evaluator import DSGEvaluator
-from adsg_core.optimization.uq_method import UQMethod
+from adsg_core.optimization.evaluator import StochasticDSGEvaluator
+from sb_arch_opt.uncertainty import MonteCarlo, UQMethod, RobustMeasure, Mean, Margin
 from sb_arch_opt.algo.pymoo_interface import plot
 
 __all__ = ['RobustUAVEvaluator', 'UAVOptionNode', 'run_sbo']
@@ -51,14 +51,14 @@ class UAVOptionNode(NamedNode):
         return f'{self.decision} = {self.value}'
 
 
-class RobustUAVEvaluator(DSGEvaluator):
+class RobustUAVEvaluator(StochasticDSGEvaluator):
     """
     Robust design of a multirotor UAV, as an example of architecture optimization under uncertainty.
 
     The design space mixes categorical, ordinal and continuous variables, and is *hierarchical*: which variables
     exist at all depends on the architectural choices made higher up. Performance depends on a handful of
-    uncertain parameters, so every design point the optimizer visits is assessed by a Monte Carlo analysis
-    instead of a single deterministic run.
+    uncertain parameters, so every design point the optimizer visits is assessed by propagating those parameters
+    through the model instead of by a single deterministic run.
 
     Design variables (13 total, 9 active in any one architecture):
 
@@ -88,6 +88,9 @@ class RobustUAVEvaluator(DSGEvaluator):
     - `eta_bat`: battery + motor efficiency [-], only in the electric architecture
     - `bsfc`: brake specific fuel consumption [kg/kWh], only in the hybrid architecture
 
+    Note the parameter *nodes* carry no value: the distribution is set on the graph, so that a derived instance
+    exposes exactly the parameters its architecture has (`dsg.stochastic_space`).
+
     The hybrid architecture reaches a higher *mean* endurance, but its fuel consumption is far more uncertain
     (~18% coefficient of variation, against ~3% for the electric efficiency). Increasing the margin factor `k`
     therefore shifts the preferred architecture towards electric: the robust optimum is not the deterministic
@@ -95,10 +98,11 @@ class RobustUAVEvaluator(DSGEvaluator):
 
     Metrics:
 
-    - `endurance` [min]: maximized, stochastic, evaluated as `mean - k*std` (MARGIN)
-    - `mass` [kg]: minimized, deterministic
+    - `endurance` [min]: maximized, stochastic, reduced with `Margin(k=-k)`, i.e. `mean - k*std` (the sign is
+      negative because the measure is applied to the physical samples of a *maximized* quantity)
+    - `mass` [kg]: minimized, evaluated at the mean payload so it has no scatter of its own
 
-    Ensure the optional dependencies are installed: `pip install chaospy sb-arch-opt[arch_sbo]`
+    Ensure the optional dependencies are installed: `pip install sb-arch-opt[arch_sbo]`
     """
 
     # Mission -> payload scaling [-] and minimum useful cruise speed [m/s]
@@ -135,26 +139,44 @@ class RobustUAVEvaluator(DSGEvaluator):
     figure_of_merit = .72  # Rotor hover efficiency [-]
     energy_mass_ref = 8.  # Reference mass the energy fractions apply to [kg]
 
-    def __init__(self, n_mc: int = 100, k: float = 2., objective: int = None):
+    def __init__(self, k: float = 2., objective: int = None):
         """
-        :param n_mc: number of Monte Carlo samples drawn per evaluated design point
         :param k: margin factor; the robust endurance is `mean - k*std`
         :param objective: 0 for endurance only, 1 for mass only, None for both
         """
-        self.n_mc = n_mc
         self.k = k
 
-        # Uncertain parameters: three always present, two conditional on the selected powertrain
-        self.par_payload = InputParameter('payload', distribution=cp.Normal(2., .3))
-        self.par_headwind = InputParameter('headwind', distribution=cp.Normal(4., 2.5))
-        self.par_drag = InputParameter('drag_factor', distribution=cp.Normal(1., .08))
-        self.par_eta_bat = InputParameter('eta_bat', distribution=cp.Normal(.92, .03))
-        self.par_bsfc = InputParameter('bsfc', distribution=cp.Normal(.42, .075))
+        # Uncertain parameters: three always present, two conditional on the selected powertrain. The nodes are
+        # identities only - the distributions are attached to the graph in get_dsg().
+        self.par_payload = InputParameter('payload')
+        self.par_headwind = InputParameter('headwind')
+        self.par_drag = InputParameter('drag_factor')
+        self.par_eta_bat = InputParameter('eta_bat')
+        self.par_bsfc = InputParameter('bsfc')
+
+        self.distributions = {
+            self.par_payload: ot.Normal(2., .3),
+            self.par_headwind: ot.Normal(4., 2.5),
+            self.par_drag: ot.Normal(1., .08),
+            self.par_eta_bat: ot.Normal(.92, .03),
+            self.par_bsfc: ot.Normal(.42, .075),
+        }
 
         self.metric_node_map: Dict[str, MetricNode] = {}
         self.option_nodes: Dict[str, List[UAVOptionNode]] = {}
 
         super().__init__(self.get_dsg(objective=objective))
+
+    @property
+    def obj_measure(self) -> List[RobustMeasure]:
+        """
+        The robust measure of each objective, in `self.objectives` order.
+
+        Endurance is *maximized*, and the measure is applied to the physical samples, so the conservative value
+        `mean - k*std` is `Margin(k=-k)`. Mass has no scatter, so any measure gives the same number.
+        """
+        measures = {'endurance': Margin(k=-self.k), 'mass': Mean()}
+        return [measures[objective.name] for objective in self.objectives]
 
     def _add_choice(self, dsg: BasicDSG, decision: str, originating_node: DSGNode, values: list,
                     is_ordinal: bool = False):
@@ -167,14 +189,13 @@ class RobustUAVEvaluator(DSGEvaluator):
     def get_dsg(self, objective: int = None) -> DSGType:
         metric_nodes = []
         if objective is None or objective == 0:
-            # Maximized AND stochastic: this is the metric the Monte Carlo analysis feeds
+            # Maximized, and the metric the uncertainty propagation feeds
             self.metric_node_map['endurance'] = MetricNode(
-                'endurance', direction=1, type_=MetricType.OBJECTIVE,
-                stochastic_=StochasticMetricType.MARGIN, k=self.k)
+                'endurance', direction=1, type_=MetricType.OBJECTIVE)
             metric_nodes.append(self.metric_node_map['endurance'])
 
         if objective is None or objective == 1:
-            # Minimized and deterministic: no uncertainty propagation needed
+            # Minimized, evaluated at the mean payload so it carries no scatter
             self.metric_node_map['mass'] = MetricNode('mass', direction=-1, type_=MetricType.OBJECTIVE)
             metric_nodes.append(self.metric_node_map['mass'])
 
@@ -227,7 +248,14 @@ class RobustUAVEvaluator(DSGEvaluator):
             (hybrid, self.par_bsfc),
         ])
 
-        return dsg.set_start_nodes({uav})
+        dsg = dsg.set_start_nodes({uav})
+
+        # The graph holds the parameter distributions; derived instances inherit them and expose only the
+        # parameters their architecture actually has
+        for param_node, distribution in self.distributions.items():
+            dsg.set_input_parameter_value(param_node, distribution)
+
+        return dsg
 
     """###########################
     ### ARCHITECTURE ANALYSIS ###
@@ -279,10 +307,10 @@ class RobustUAVEvaluator(DSGEvaluator):
 
     def _endurance(self, dsg: DSGType, sample: Dict[InputParameter, float]) -> float:
         """
-        Endurance [min] for one Monte Carlo sample of the uncertain parameters.
+        Endurance [min] for one realization of the uncertain parameters.
 
-        This is the function handed to the Monte Carlo analysis: it takes the architecture plus one realization
-        of the uncertain parameters, and returns one realization of the quantity of interest.
+        `sample` maps every parameter node present in this architecture to its value for this realization, so the
+        branch-local parameters (`eta_bat`, `bsfc`) are only read where they exist.
         """
         decisions = self._decision_values(dsg)
         mass, energy_mass = self._mass(dsg, sample[self.par_payload])
@@ -305,31 +333,36 @@ class RobustUAVEvaluator(DSGEvaluator):
     ### ROBUST EVALUATION ###
     #####################"""
 
-    def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, float]:
-        """Evaluate one architecture: Monte Carlo for the stochastic metrics, direct for the deterministic ones"""
+    def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode],
+                  parameters: Dict[InputParameter, float]) -> Dict[MetricNode, float]:
+        """Evaluate one architecture for ONE realization of the uncertain parameters"""
         results = {}
         for metric_node in metric_nodes:
             if metric_node.name == 'endurance':
-                # Monte Carlo for THIS design point: n_mc samples of the uncertain parameters that exist here
-                results.update(self.propagate_uncertainty("MC", self._endurance, dsg, metric_node, n=self.n_mc))
+                results[metric_node] = self._endurance(dsg, parameters)
 
             elif metric_node.name == 'mass':
-                # Deterministic: evaluated at the mean payload, no uncertainty propagation
-                mass, _ = self._mass(dsg, float(cp.E(self.par_payload.distribution)))
-                results[metric_node] = mass
-
+                # Evaluated at the mean payload, so this metric has no scatter of its own
+                mean_payload = dsg.input_parameter_value(self.par_payload).getMean()[0]
+                results[metric_node], _ = self._mass(dsg, mean_payload)
 
         return results
 
-    def evaluate_statistics(self, dsg: DSGType) -> Dict[str, float]:
-        """Convenience helper returning the raw Monte Carlo statistics for one architecture"""
-        mean, std = UQMethod.mc(dsg, self._endurance, n=self.n_mc)
-        mass, _ = self._mass(dsg, float(cp.E(self.par_payload.distribution)))
+    def evaluate_statistics(self, dsg: DSGType, uq_method: UQMethod = None) -> Dict[str, float]:
+        """Convenience helper returning the raw statistics of one architecture"""
+        if uq_method is None:
+            uq_method = MonteCarlo(n_evaluations=1000, seed=42)
+
+        param_space = dsg.stochastic_space
+        result = self.evaluate(dsg, uq_method.get_samples(param_space), uq_method, param_space)
+
+        by_name = {objective.name: output for objective, output in zip(self.objectives, result.outputs)}
+        endurance, mass = by_name['endurance'], by_name['mass']
         return {
-            'endurance_mean': mean,
-            'endurance_std': std,
-            'endurance_robust': mean - self.k*std,
-            'mass': mass,
+            'endurance_mean': endurance.mean(),
+            'endurance_std': endurance.std(),
+            'endurance_robust': endurance.mean() - self.k*endurance.std(),
+            'mass': mass.mean(),
         }
 
 
@@ -338,7 +371,7 @@ def run_sbo(n_infill: int = 20, init_size: int = 40, n_mc: int = 1000, k: float 
     """
     Optimize the robust UAV problem with SBArchOpt's Surrogate-Based Optimization (SBO).
 
-    SBO is the right tool here: every design point costs a full Monte Carlo analysis, so the number of
+    SBO is the right tool here: every design point costs a full uncertainty propagation, so the number of
     evaluations must be kept low. The surrogate is built over the mixed-discrete hierarchical design space,
     which SBArchOpt handles natively through the DSGDesignSpace exposed by `get_problem()`.
 
@@ -350,8 +383,12 @@ def run_sbo(n_infill: int = 20, init_size: int = 40, n_mc: int = 1000, k: float 
     if seed is not None:
         np.random.seed(seed)
 
-    evaluator = RobustUAVEvaluator(n_mc=n_mc, k=k, objective=objective)
-    problem = evaluator.get_problem()
+    evaluator = RobustUAVEvaluator(k=k, objective=objective)
+
+    # One seeded draw of the uncertain parameters is reused for every design point (common random numbers), so
+    # that design points are comparable to each other and the surrogate sees a smooth response
+    problem = evaluator.get_problem(uq_method=MonteCarlo(n_evaluations=n_mc, seed=seed if seed is not None else 42),
+                                    obj_measure=evaluator.obj_measure)
 
     problem.print_stats()
 
@@ -381,18 +418,4 @@ def run_sbo(n_infill: int = 20, init_size: int = 40, n_mc: int = 1000, k: float 
 
 
 if __name__ == '__main__':
-    # evaluator = RobustUAVEvaluator(n_mc=1000, k=2., objective=None)
-    # x = evaluator.get_random_design_vector()
-    # dsg, _, _ = evaluator.get_graph(x)
-    # obj, con = evaluator.evaluate(dsg)
-    # print(obj)
-    # print(con)
-    # print(dsg.all_metric_statistics)
-    # dsg_all = evaluator.get_dsg()
-    # dsg_all.render()
-    # dsg.render()
-
-
-    run_sbo(n_infill=20, init_size=40, n_mc=1000, k=3, objective=None, seed=None, verbose=True)
-
-    evaluator = RobustUAVEvaluator(n_mc=100, k=2., objective=None)
+    run_sbo(n_infill=20, init_size=40, n_mc=1000, k=3., objective=None, seed=None, verbose=True)

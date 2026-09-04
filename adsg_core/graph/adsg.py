@@ -22,8 +22,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-from functools import cached_property
-
 import numpy as np
 import openturns as ot
 from typing import *
@@ -63,7 +61,7 @@ class DSG:
         self._update_connector_grouping_degrees()
         self._des_var_values: Dict[DesignVariableNode, Union[float, int]] = (_des_var_values or {}).copy()
         self._input_parameter_values: Dict[InputParameter, Union[ot.Distribution, float]] = (_input_parameter_values or {}).copy()
-        self._metric_values: Dict[MetricNode, float] = (_metric_values or {}).copy()
+        self._metric_values: Dict[MetricNode, Union[float, StochasticOutput]] = (_metric_values or {}).copy()
 
     @staticmethod
     def _get_empty_graph():
@@ -195,7 +193,6 @@ class DSG:
             node.assigned_value = self.input_parameter_value(node)
         for node in self.metric_nodes:
             node.assigned_value = self.metric_value(node)
-            node.assigned_statistics = self.metric_statistics(node)
 
         self._export_prepare(graph)
         return graph
@@ -294,55 +291,80 @@ class DSG:
 
     @property
     def input_parameter_nodes(self) -> List[InputParameter]:
-        return self.get_nodes_by_type(InputParameter)
+        """
+        Parameter nodes present in this (instance of the) DSG, sorted by name.
+
+        The sort is the ordering invariant of the whole uncertainty path: a realization of the uncertain parameters
+        is a plain array indexed by position, so every producer and consumer of such an array has to agree on the
+        parameter order. `GraphProcessor.uncertain_parameter_nodes` sorts by name for the same reason.
+        """
+        return sorted(self.get_nodes_by_type(InputParameter), key=lambda node: node.name)
 
     def set_input_parameter_value(self, parameter_node: InputParameter, value: Union[ot.Distribution, float]):
         """
-        Set the value of a parameter node.
+        Set the value of a parameter node: a distribution for an uncertain parameter, a float for a deterministic
+        one. Note that the graph holds the *distribution*, never a realization of it: realizations are handed to
+        the evaluation function and not stored.
         """
         self._input_parameter_values[parameter_node] = value
 
-    def input_parameter_value(self, parameter_node: InputParameter) -> Optional[float]:
+    def input_parameter_value(self, parameter_node: InputParameter) \
+            -> Optional[Union[ot.Distribution, float]]:
         return self._input_parameter_values.get(parameter_node)
 
     @property
-    def input_parameter_values(self):
+    def input_parameter_values(self) -> Dict[InputParameter, Union[ot.Distribution, float]]:
         return self._input_parameter_values.copy()
 
     def reset_input_parameter_values(self):
         self._input_parameter_values = {}
 
-    @cached_property
+    @staticmethod
+    def get_parameter_distribution(value: Union[ot.Distribution, float, None]) -> ot.Distribution:
+        """
+        Represent a stored parameter value as a distribution.
+
+        A deterministic parameter (a float, or one that was never assigned) still needs its own column in the
+        realization array, so that indexing by position stays uniform for every parameter node; `ot.Dirac`
+        contributes a fixed value and zero variance, which is exactly a constant parameter.
+        """
+        if isinstance(value, (ot.DistributionImplementation, ot.Distribution)):
+            return value
+        return ot.Dirac(0. if value is None else float(value))
+
+    @property
     def stochastic_space(self) -> StochasticParameterSpace:
+        """
+        The joint distribution of the parameters present in this (instance of the) DSG, in `input_parameter_nodes`
+        order. Note this is *not* cached: parameter values are assigned after construction.
+
+        For a hierarchical problem this space differs per architecture instance (a parameter hanging off a
+        selection-choice option only exists if that option is selected), which is why an optimization problem
+        samples the union space of the template graph instead - see `DSGStochasticArchOptProblem`.
+        """
         space = StochasticParameterSpace()
-        param_nodes = self.input_parameter_nodes
-        for param_node in param_nodes:
-            # TODO handle deterministic parameters in sbarchopt
-            value = self.input_parameter_value(param_node)
-            param = StochasticParameter(param_node.name, value)
-            space.add_parameter(param)
+        for param_node in self.input_parameter_nodes:
+            distribution = self.get_parameter_distribution(self.input_parameter_value(param_node))
+            space.add_parameter(StochasticParameter(param_node.name, distribution))
         return space
-
-    def sample_parameters(self) -> Dict[InputParameter, float]:
-        """Sample all parameter values present in the DSG instance and set the value on graph"""
-
 
     @property
     def metric_nodes(self) -> List[MetricNode]:
         return self.get_nodes_by_type(MetricNode)
 
-
     def set_metric_value(self, metric_node: MetricNode, value: Union[float, StochasticOutput]):
         """
-        Set the value of a metric node.
+        Set the value of a metric node: a float for a deterministic evaluation, or a `StochasticOutput` (the full
+        sampled column, in physical units) for an evaluation under uncertainty. Each derived instance carries its
+        own metric values, so every evaluated architecture keeps its own stochastic outputs.
         """
         self._metric_values[metric_node] = value
 
-    def metric_value(self, metric_node) -> Optional[float]:
+    def metric_value(self, metric_node) -> Optional[Union[float, StochasticOutput]]:
         return self._metric_values.get(metric_node)
 
     @property
-    def metric_values(self):
+    def metric_values(self) -> Dict[MetricNode, Union[float, StochasticOutput]]:
         return self._metric_values.copy()
 
     def reset_metric_values(self):
@@ -732,7 +754,7 @@ class DSG:
         dec_con_map_copy = self._choice_constraints.copy()
         return self.__class__(_graph=graph_copy, _influence_matrix=self._influence_matrix,
                               _status_array=status_array if status_array is not None else self._status_array,
-                              _choice_con_map=dec_con_map_copy, _des_var_values=self._des_var_values, _uncertain_parameter_values=self._input_parameter_values,
+                              _choice_con_map=dec_con_map_copy, _des_var_values=self._des_var_values, _input_parameter_values=self._input_parameter_values,
                               _metric_values=self._metric_values, **kwargs)
 
     def _mod_graph_adjust_kwargs(self, kwargs):
@@ -748,7 +770,7 @@ class DSG:
         self._mod_graph_adjust_kwargs(kwargs)
         return self.__class__(_graph=graph_copy, _influence_matrix=self._influence_matrix,
                               _status_array=self._status_array, _choice_con_map=self._choice_constraints,
-                              _des_var_values=self._des_var_values, _uncertain_parameter_values=self._input_parameter_values, _metric_values=self._metric_values, **kwargs)
+                              _des_var_values=self._des_var_values, _input_parameter_values=self._input_parameter_values, _metric_values=self._metric_values, **kwargs)
 
     """#########################################
     ### INCOMPATIBILITY CONSTRAINT FUNCTIONS ###
