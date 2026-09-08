@@ -416,21 +416,13 @@ class GraphProcessor:
     def param_space(self) -> StochasticParameterSpace:
         """
         Return a stochastic parameter space corresponding to all the parameters defined during initialization.
+        Handles both stochastic and deterministic parameters.
         """
         param_space = StochasticParameterSpace()
         for node, value in self.graph.input_parameter_values.items():
-            distribution = self.get_parameter_distribution(self.graph.input_parameter_value(node))
+            distribution = self.graph.input_parameter_value(node)
             param_space.add_parameter(InputParameter(node.name, distribution))
         return param_space
-
-    @staticmethod
-    def get_parameter_distribution(value: Union[ot.DistributionImplementation, float]) -> Union[ot.DistributionImplementation, ot.Dirac]:
-        """
-        Return a distribution corresponding to the given distribution value. Convert deterministic to Dirac
-        """
-        if isinstance(value, (ot.DistributionImplementation, ot.Distribution)):
-            return value
-        return ot.Dirac(float(value))
 
     @cached_property
     def metric_nodes(self) -> List[MetricNode]:

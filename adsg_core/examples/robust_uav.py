@@ -30,7 +30,7 @@ from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_basic import *
 from adsg_core.graph.adsg_nodes import *
 from adsg_core.optimization.stochastic_evaluator import StochasticDSGEvaluator
-from sb_arch_opt.uncertainty import MonteCarlo, UQMethod, RobustMeasure, Mean, Margin
+from sb_arch_opt.uncertainty import MonteCarlo, UQMethod, RobustMeasure, Mean, Margin, PolynomialChaos
 from sb_arch_opt.algo.pymoo_interface import plot
 
 __all__ = ['RobustUAVEvaluator', 'UAVOptionNode', 'run_sbo']
@@ -386,7 +386,7 @@ def run_sbo(n_infill: int = 20, init_size: int = 40, n_mc: int = 1000, k: float 
 
     # One seeded draw of the uncertain parameters is reused for every design point (common random numbers), so
     # that design points are comparable to each other and the surrogate sees a smooth response
-    problem = evaluator.get_problem(uq_method=MonteCarlo(param_space, n_evaluations=n_mc, seed=seed if seed is not None else 42),
+    problem = evaluator.get_problem(uq_method=PolynomialChaos(param_space, n_evaluations=21, degree=2, seed=42, n_metamodel_samples=1000),
                                     obj_measure=evaluator.obj_measure)
 
     problem.print_stats()
@@ -422,7 +422,7 @@ if __name__ == '__main__':
     x = evaluator.get_random_design_vector()
     dsg, _, _ = evaluator.get_graph(x)
     space = evaluator.param_space
-    uq = MonteCarlo(space, n_evaluations=100, seed=42)
+    uq = PolynomialChaos(space, n_evaluations=21, degree=2, seed=42, n_metamodel_samples=1000)
     samples = uq.get_samples()
     result = evaluator.evaluate(dsg, samples, uq)
     print(result.outputs)

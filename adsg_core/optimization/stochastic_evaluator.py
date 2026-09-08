@@ -29,15 +29,15 @@ import warnings
 
 import numpy as np
 
+from adsg_core import DSGType
 from adsg_core.graph.adsg_nodes import MetricNode, InputParameterNode
 from adsg_core.optimization.dv_output_defs import *
 from adsg_core.optimization.graph_processor import *
-from adsg_core.optimization.uq_method import *
 
 __all__ = ['StochasticDSGEvaluator', 'StochasticADSGEvaluator', 'HAS_SB_ARCH_OPT', 'check_dependency']
 try:
     from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
-    from sb_arch_opt.uncertainty import RobustMeasure, StochasticResults
+    from sb_arch_opt.uncertainty import RobustMeasure, StochasticResults, UQMethod
     from sb_arch_opt.sampling import TrailRepairWarning
 
     warnings.simplefilter("ignore", category=TrailRepairWarning)
@@ -51,6 +51,9 @@ except ImportError:
         pass
 
     class StochasticResults:
+        pass
+
+    class UQMethod:
         pass
 
 log = logging.getLogger('adsg.opt')
@@ -103,7 +106,8 @@ class StochasticDSGEvaluator(GraphProcessor):
 
         # Evaluate DSG instance for all samples
         for i in range(n_s):
-            realization = {node: float(value) for node, value in zip(list(dsg.input_parameter_values.keys()), samples[i, :]) if node is not None}
+            parameter_values = uq_method.param_space.include_deterministic_values(samples)
+            realization = {node: float(value) for node, value in zip(list(dsg.input_parameter_values.keys()), parameter_values[i, :]) if node is not None}
             value_map = self._evaluate(dsg, metric_nodes, realization)
             f_s[i, :] = [value_map.get(objective.node, math.nan) for objective in self.objectives]
             g_s[i, :] = [value_map.get(constraint.node, math.nan) if constraint.node in metric_nodes else constraint.ref for constraint in self.constraints]

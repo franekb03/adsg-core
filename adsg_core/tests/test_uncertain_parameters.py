@@ -273,7 +273,7 @@ def test_param_space_is_the_union_of_all_parameters(n):
 
 
 @pytest.mark.parametrize('value,expected_mean', [(1.225, 1.225), (7, 7.)])
-def test_deterministic_parameter_becomes_a_dirac(n, value, expected_mean):
+def test_deterministic_parameter_becomes_a_float(n, value, expected_mean):
     """A deterministic parameter keeps its column in the realization matrix, with zero variance"""
     par_a, par_b = InputParameterNode('A'), InputParameterNode('B')
 
@@ -289,9 +289,11 @@ def test_deterministic_parameter_becomes_a_dirac(n, value, expected_mean):
     assert space.parameters[1].std() == pytest.approx(0.)
 
     samples = space.get_random_samples(10)
-    assert samples.shape == (10, 2)
-    assert np.all(samples[:, 1] == expected_mean)
-    assert samples[:, 0].std() > 0.
+    assert samples.shape == (10, 1)
+    sampels_extended = space.include_deterministic_values(samples)
+    assert sampels_extended.shape == (10, 2)
+    assert np.all(sampels_extended[:, 1] == expected_mean)
+    assert sampels_extended[:, 0].std() > 0.
 
 
 """#####################################
