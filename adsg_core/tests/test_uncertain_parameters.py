@@ -1,102 +1,58 @@
 """
-Tests for UncertainParameterNode and the uncertainty-propagation machinery built on top of it.
+Tests for InputParameterNode and the uncertainty-propagation machinery built on top of it.
 
 Ordered from simple to general:
-1.  UncertainParameterNode itself (construction, sampling, export)
-2.  Storing sampled values on the DSG
-3.  Parameter nodes under the graph derivation (conditional existence)
-4.  GraphProcessor integration (parameters are not design variables)
-5.  Stochastic metric handling (StochasticMetricType)
-6.  Monte Carlo uncertainty propagation
-7.  A full robust optimization problem: MC is run for every selected design point
+1.  InputParameterNode itself (it is an identity; the value lives on the graph)
+2.  Storing parameter distributions on the DSG
+3.  Parameter nodes under graph derivation (conditional existence)
+4.  GraphProcessor: parameters are not design variables, and the union parameter space
+5.  StochasticDSGEvaluator.evaluate: one realization per sample, StochasticOutput per metric on the graph
+6.  A full stochastic optimization problem through SBArchOpt
 """
 import math
 import pytest
 import numpy as np
+import openturns as ot
 from typing import *
-import chaospy as cp
 
 from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_basic import *
 from adsg_core.graph.adsg_nodes import *
 from adsg_core.optimization.evaluator import *
+from adsg_core.optimization.stochastic_evaluator import *
 from adsg_core.optimization.graph_processor import *
-from adsg_core.optimization.uq_method import UQMethod
-
-
-@pytest.fixture(autouse=True)
-def _seed():
-    """Chaospy's 'random' rule draws from the numpy global RNG, so seeding it makes the tests reproducible"""
-    np.random.seed(42)
+from sb_arch_opt.uncertainty import (MonteCarlo, PolynomialChaos, StochasticOutput, StochasticResults,
+                                     StochasticParameterSpace, Mean, Margin, Quantile)
 
 
 """#################################
-### 1. UncertainParameterNode    ###
+### 1. InputParameterNode        ###
 #################################"""
 
 
-def test_uncertain_parameter_node_basics():
-    par_node = InputParameterNode('E', distribution=cp.Normal(10., 2.))
+def test_input_parameter_node_basics():
+    par_node = InputParameterNode('E')
 
     assert par_node.name == 'E'
     assert par_node.idx is None
-    assert par_node.is_uncertain
-    assert par_node.sampled_value is None
     assert str(par_node) == 'PARAM[E]'
     assert repr(par_node)
     assert par_node.get_export_color()
+    assert par_node.str_context() == 'PARAM.E'
 
 
-def test_uncertain_parameter_node_nominal():
-    """A parameter node without a distribution represents a fixed (deterministic) parameter"""
-    par_node = InputParameterNode('rho', nominal=1.225)
+def test_input_parameter_node_export_title():
+    """The node holds no value, so it only shows one once the graph assigned it for export"""
+    par_node = InputParameterNode('E')
+    assert par_node.get_export_title() == 'E'
 
-    assert not par_node.is_uncertain
-    assert par_node.nominal == 1.225
-    assert par_node.get_export_title() == 'rho = 1.225'
-
-
-def test_uncertain_parameter_node_sample_shape():
-    par_node = InputParameterNode('E', distribution=cp.Normal(10., 2.))
-
-    for n in [1, 5, 100]:
-        values = par_node.sample(n)
-        assert isinstance(values, np.ndarray)
-        assert values.shape == (n,)
-        assert np.all(np.isfinite(values))
+    par_node.assigned_value = ot.Normal(10., 2.)
+    assert par_node.get_export_title().startswith('E = ')
 
 
-def test_uncertain_parameter_node_sample_statistics():
-    """Sampling many times should recover the distribution moments"""
-    mu, sigma = 10., 2.
-    par_node = InputParameterNode('E', distribution=cp.Normal(mu, sigma))
-
-    values = par_node.sample(20000)
-    assert values.mean() == pytest.approx(mu, abs=.1)
-    assert values.std() == pytest.approx(sigma, abs=.1)
-
-
-def test_uncertain_parameter_node_uniform():
-    par_node = InputParameterNode('t', distribution=cp.Uniform(2., 4.))
-
-    values = par_node.sample(5000)
-    assert np.all(values >= 2.)
-    assert np.all(values <= 4.)
-    assert values.mean() == pytest.approx(3., abs=.1)
-
-
-def test_uncertain_parameter_node_export_title():
-    par_node = InputParameterNode('E', distribution=cp.Normal(10., 2.))
-    assert par_node.get_export_title()
-
-    par_node.sampled_value = 11.5
-    assert par_node.get_export_title() == f'E = {cp.Normal(10., 2.).__str__()}'
-
-
-def test_uncertain_parameter_nodes_are_distinct():
+def test_input_parameter_nodes_are_distinct():
     """Nodes are identity-based, so two parameters with the same name are still different nodes"""
-    par_a = InputParameterNode('E', distribution=cp.Normal(0., 1.))
-    par_b = InputParameterNode('E', distribution=cp.Normal(0., 1.))
+    par_a, par_b = InputParameterNode('E'), InputParameterNode('E')
 
     assert par_a != par_b
     assert len({par_a, par_b}) == 2
@@ -114,82 +70,60 @@ def _dsg_with_parameters(n, par_nodes):
     return dsg.set_start_nodes({n[0]})
 
 
-def test_set_get_uncertain_parameter_value(n):
-    par_a = InputParameterNode('A', distribution=cp.Normal(0., 1.))
-    par_b = InputParameterNode('B', distribution=cp.Normal(5., 1.))
+def test_set_get_input_parameter_value(n):
+    par_a, par_b = InputParameterNode('A'), InputParameterNode('B')
     dsg = _dsg_with_parameters(n, [par_a, par_b])
 
     assert dsg.feasible
     assert set(dsg.input_parameter_nodes) == {par_a, par_b}
 
-    assert dsg.input_parameter_values(par_a) is None
-    dsg.set_input_parameter_value(par_a, .5)
-    assert dsg.input_parameter_values(par_a) == .5
-    assert dsg.input_parameter_values == {par_a: .5}
+    assert dsg.input_parameter_value(par_a) is None
+    dist = ot.Normal(0., 1.)
+    dsg.set_input_parameter_value(par_a, dist)
+    assert dsg.input_parameter_value(par_a) is dist
 
-    dsg.set_input_parameter_value(par_b, math.nan)
-    assert math.isnan(dsg.input_parameter_values(par_b))
+    # A deterministic parameter is stored as a plain value
+    dsg.set_input_parameter_value(par_b, 1.225)
+    assert dsg.input_parameter_value(par_b) == 1.225
 
     dsg.reset_input_parameter_values()
     assert dsg.input_parameter_values == {}
-    assert dsg.input_parameter_values(par_a) is None
+    assert dsg.input_parameter_value(par_a) is None
 
 
-def test_uncertain_parameter_values_is_a_copy(n):
-    par_a = InputParameterNode('A', distribution=cp.Normal(0., 1.))
+def test_input_parameter_values_is_a_copy(n):
+    par_a = InputParameterNode('A')
     dsg = _dsg_with_parameters(n, [par_a])
 
     dsg.set_input_parameter_value(par_a, 1.)
     values = dsg.input_parameter_values
     values[par_a] = 99.
 
-    assert dsg.input_parameter_values(par_a) == 1.
+    assert dsg.input_parameter_value(par_a) == 1.
 
 
-def test_uncertain_parameter_values_survive_copy(n):
-    par_a = InputParameterNode('A', distribution=cp.Normal(0., 1.))
+def test_input_parameter_values_survive_copy(n):
+    """Regression: the copy constructors once passed a pre-rename keyword, silently dropping every value"""
+    par_a = InputParameterNode('A')
     dsg = _dsg_with_parameters(n, [par_a])
 
-    dsg.set_input_parameter_value(par_a, .5)
+    dsg.set_input_parameter_value(par_a, ot.Normal(0., 1.))
     dsg_copy = dsg.copy()
 
-    assert dsg_copy.input_parameter_values(par_a) == .5
+    assert dsg_copy.input_parameter_value(par_a) is not None
+    assert dsg_copy.input_parameter_value(par_a).getMean()[0] == 0.
 
 
-def test_sample_parameters(n):
-    par_a = InputParameterNode('A', distribution=cp.Normal(0., 1.))
-    par_b = InputParameterNode('B', distribution=cp.Uniform(10., 20.))
-    dsg = _dsg_with_parameters(n, [par_a, par_b])
+def test_input_parameter_values_keep_insertion_order(n):
+    """A realization is an array indexed by position, and the column order comes from this dict (see
+    GraphProcessor.param_space), so its order is part of the contract"""
+    pars = [InputParameterNode(name) for name in ['c', 'a', 'b']]
+    dsg = _dsg_with_parameters(n, pars)
 
-    values = dsg.sample_parameters()
+    for par in pars:
+        dsg.set_input_parameter_value(par, ot.Normal(0., 1.))
 
-    assert set(values) == {par_a, par_b}
-    assert all(isinstance(value, float) for value in values.values())
-    assert 10. <= values[par_b] <= 20.
-
-    # Sampled values are stored on the graph instance
-    assert dsg.input_parameter_values == values
-
-
-def test_sample_parameters_overwrites_previous_sample(n):
-    """Repeated sampling on one instance keeps only the latest draw"""
-    par_a = InputParameterNode('A', distribution=cp.Normal(0., 1.))
-    dsg = _dsg_with_parameters(n, [par_a])
-
-    first = dsg.sample_parameters()[par_a]
-    second = dsg.sample_parameters()[par_a]
-
-    assert first != second
-    assert dsg.input_parameter_values(par_a) == second
-
-
-def test_sample_parameters_no_parameters(n):
-    dsg = BasicDSG()
-    dsg.add_edges([(n[0], n[1])])
-    dsg = dsg.set_start_nodes({n[0]})
-
-    assert dsg.input_parameter_nodes == []
-    assert dsg.sample_parameters() == {}
+    assert [par.name for par in dsg.input_parameter_values] == ['c', 'a', 'b']
 
 
 """#################################
@@ -199,18 +133,15 @@ def test_sample_parameters_no_parameters(n):
 
 def test_parameter_node_conditional_existence(n):
     """A parameter node hung off a selection-choice option only exists if that option is selected"""
-    par_common = InputParameterNode('common', distribution=cp.Normal(0., 1.))
-    par_opt_a = InputParameterNode('only_a', distribution=cp.Normal(1., 1.))
-    par_opt_b = InputParameterNode('only_b', distribution=cp.Normal(2., 1.))
+    par_common = InputParameterNode('common')
+    par_opt_a, par_opt_b = InputParameterNode('only_a'), InputParameterNode('only_b')
 
     dsg = BasicDSG()
-    dsg.add_edges([
-        (n[0], par_common),
-        (n[1], par_opt_a),
-        (n[2], par_opt_b),
-    ])
+    dsg.add_edges([(n[0], par_common), (n[1], par_opt_a), (n[2], par_opt_b)])
     dsg.add_selection_choice('C1', n[0], [n[1], n[2]])
     dsg = dsg.set_start_nodes({n[0]})
+    for par in [par_common, par_opt_a, par_opt_b]:
+        dsg.set_input_parameter_value(par, ot.Normal(0., 1.))
 
     processor = GraphProcessor(dsg)
     assert len(processor.des_vars) == 1
@@ -223,21 +154,37 @@ def test_parameter_node_conditional_existence(n):
         assert par_common in par_nodes
         seen |= par_nodes
 
-        # Only the parameter belonging to the selected option is present
-        if par_opt_a in par_nodes:
-            assert par_opt_b not in par_nodes
-        else:
-            assert par_opt_b in par_nodes
+        # Only the parameter belonging to the selected option is present in the graph
+        assert (par_opt_b not in par_nodes) if par_opt_a in par_nodes else (par_opt_b in par_nodes)
+        assert len(par_nodes) == 2
 
-        # Sampling only touches the parameters that exist in this architecture
-        assert set(graph.sample_parameters()) == par_nodes
+        # The distributions survived derivation
+        assert graph.input_parameter_value(par_common) is not None
 
     assert seen == {par_common, par_opt_a, par_opt_b}
 
 
+def test_derived_instance_keeps_all_parameter_values(n):
+    """Note the *values* are not pruned along with the nodes: an instance carries the whole template dict, which
+    is what keeps its column order aligned with the problem's union parameter space"""
+    par_common, par_opt_a = InputParameterNode('common'), InputParameterNode('only_a')
+
+    dsg = BasicDSG()
+    dsg.add_edges([(n[0], par_common), (n[1], par_opt_a)])
+    dsg.add_selection_choice('C1', n[0], [n[1], n[2]])
+    dsg = dsg.set_start_nodes({n[0]})
+    for par in [par_common, par_opt_a]:
+        dsg.set_input_parameter_value(par, ot.Normal(0., 1.))
+
+    graph, _, _ = GraphProcessor(dsg).get_graph([1])  # option without only_a
+
+    assert par_opt_a not in graph.input_parameter_nodes  # pruned from the graph
+    assert par_opt_a in graph.input_parameter_values  # but its value is still carried
+
+
 def test_parameter_values_isolated_between_instances(n):
-    """Each derived instance carries its own sampled values"""
-    par_a = InputParameterNode('A', distribution=cp.Normal(0., 1.))
+    """Each derived instance carries its own values"""
+    par_a = InputParameterNode('A')
 
     dsg = BasicDSG()
     dsg.add_edges([(n[0], par_a)])
@@ -251,11 +198,11 @@ def test_parameter_values_isolated_between_instances(n):
     graph_a.set_input_parameter_value(par_a, 1.)
     graph_b.set_input_parameter_value(par_a, 2.)
 
-    assert graph_a.input_parameter_values(par_a) == 1.
-    assert graph_b.input_parameter_values(par_a) == 2.
+    assert graph_a.input_parameter_value(par_a) == 1.
+    assert graph_b.input_parameter_value(par_a) == 2.
 
     # The template graph is never touched by evaluating instances
-    assert dsg.input_parameter_values(par_a) is None
+    assert dsg.input_parameter_value(par_a) is None
 
 
 """#################################
@@ -264,8 +211,8 @@ def test_parameter_values_isolated_between_instances(n):
 
 
 def test_parameters_are_not_design_variables(n):
-    """Uncertain parameters must never show up as design variables: the optimizer does not choose them"""
-    par_a = InputParameterNode('A', distribution=cp.Normal(0., 1.))
+    """Input parameters must never show up as design variables: the optimizer does not choose them"""
+    par_a = InputParameterNode('A')
     dv_node = DesignVariableNode('DV', bounds=(0., 1.))
 
     dsg = BasicDSG()
@@ -275,215 +222,112 @@ def test_parameters_are_not_design_variables(n):
 
     processor = GraphProcessor(dsg)
 
-    des_var_names = [dv.name for dv in processor.des_vars]
-    assert des_var_names == ['C1', 'DV']
+    assert [dv.name for dv in processor.des_vars] == ['C1', 'DV']
     assert all(dv.node is not par_a for dv in processor.des_vars)
     assert par_a not in processor.design_variable_nodes
 
 
-def test_processor_uncertain_parameter_nodes_sorted(n):
-    """The processor exposes parameter nodes sorted by name (needs a sort key: DSGNode has no ordering)"""
-    par_c = InputParameterNode('C', distribution=cp.Normal(0., 1.))
-    par_a = InputParameterNode('A', distribution=cp.Normal(0., 1.))
-    par_b = InputParameterNode('B', distribution=cp.Normal(0., 1.))
+def test_processor_input_parameter_nodes_sorted(n):
+    """The node listing is sorted by name. Note this is NOT the parameter space's column order, which follows the
+    order the values were assigned in - see test_param_space_follows_value_insertion_order"""
+    pars = [InputParameterNode(name) for name in ['C', 'A', 'B']]
 
     dsg = BasicDSG()
-    dsg.add_edges([(n[0], par_c), (n[0], par_a), (n[0], par_b)])
+    dsg.add_edges([(n[0], par) for par in pars])
     dsg.add_selection_choice('C1', n[0], [n[1], n[2]])
     dsg = dsg.set_start_nodes({n[0]})
 
-    processor = GraphProcessor(dsg)
-    assert [par.name for par in processor.input_parameter_nodes] == ['A', 'B', 'C']
+    assert [par.name for par in GraphProcessor(dsg).input_parameter_nodes] == ['A', 'B', 'C']
 
 
-"""#################################
-### 5. Stochastic metrics        ###
-#################################"""
+def test_param_space_follows_value_insertion_order(n):
+    """The union space is built by iterating the value dict, so its columns are in assignment order. This is the
+    order a realization is handed out in, so it has to be the one the evaluator zips against"""
+    pars = [InputParameterNode(name) for name in ['c', 'a', 'b']]
 
-
-class _NoopEvaluator(DSGEvaluator):
-
-    def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, float]:
-        return {}
-
-
-@pytest.fixture
-def noop_evaluator(n):
     dsg = BasicDSG()
-    dsg.add_edges([(n[0], MetricNode('M', direction=-1, type_=MetricType.OBJECTIVE))])
+    dsg.add_edges([(n[0], par) for par in pars])
+    dsg = dsg.set_start_nodes({n[0]})
+    for par in pars:
+        dsg.set_input_parameter_value(par, ot.Normal(0., 1.))
+
+    space = GraphProcessor(dsg).param_space
+    assert space.parameter_names == ['c', 'a', 'b']
+    assert space.n_parameters == 3
+
+
+def test_param_space_is_the_union_of_all_parameters(n):
+    """Every parameter of the template graph gets a column, including branch-local ones: one fixed-width
+    realization matrix then serves every architecture"""
+    par_common, par_opt_a, par_opt_b = (InputParameterNode('common'), InputParameterNode('only_a'),
+                                        InputParameterNode('only_b'))
+
+    dsg = BasicDSG()
+    dsg.add_edges([(n[0], par_common), (n[1], par_opt_a), (n[2], par_opt_b)])
     dsg.add_selection_choice('C1', n[0], [n[1], n[2]])
     dsg = dsg.set_start_nodes({n[0]})
-    return _NoopEvaluator(dsg)
+    for par in [par_common, par_opt_a, par_opt_b]:
+        dsg.set_input_parameter_value(par, ot.Normal(0., 1.))
+
+    assert GraphProcessor(dsg).param_space.n_parameters == 3
 
 
-def test_metric_node_stochastic_attributes():
-    metric_node = MetricNode('M', direction=-1, stochastic_=StochasticMetricType.MARGIN, k=3.)
+@pytest.mark.parametrize('value,expected_mean', [(1.225, 1.225), (7, 7.)])
+def test_deterministic_parameter_becomes_a_dirac(n, value, expected_mean):
+    """A deterministic parameter keeps its column in the realization matrix, with zero variance"""
+    par_a, par_b = InputParameterNode('A'), InputParameterNode('B')
 
-    assert metric_node.stochastic == StochasticMetricType.MARGIN
-    assert metric_node.k == 3.
+    dsg = BasicDSG()
+    dsg.add_edges([(n[0], par_a), (n[0], par_b)])
+    dsg = dsg.set_start_nodes({n[0]})
+    dsg.set_input_parameter_value(par_a, ot.Normal(0., 1.))
+    dsg.set_input_parameter_value(par_b, value)
 
-    plain_node = MetricNode('M2', direction=-1)
-    assert plain_node.stochastic is None
-    assert plain_node.k is None
+    space = GraphProcessor(dsg).param_space
+    assert space.n_parameters == 2
+    assert space.parameters[1].mean() == pytest.approx(expected_mean)
+    assert space.parameters[1].std() == pytest.approx(0.)
 
-
-def test_process_stochastic_qoi_mean(noop_evaluator):
-    metric_node = MetricNode('M', direction=-1, stochastic_=StochasticMetricType.MEAN)
-    assert noop_evaluator.process_stochastic_qoi(metric_node, mean=5., std=2.) == 5.
-
-
-@pytest.mark.parametrize('k', [0., 1., 3.])
-def test_process_stochastic_qoi_margin(noop_evaluator, k):
-    """For a minimization/maximization metric, the margin formulation penalizes spread: mean +/- k*std"""
-    metric_node = MetricNode('M', direction=-1, stochastic_=StochasticMetricType.MARGIN, k=k)
-    assert noop_evaluator.process_stochastic_qoi(metric_node, mean=5., std=2.) == 5. + k*2.
-
-    metric_node2 = MetricNode('M2', direction=1, stochastic_=StochasticMetricType.MARGIN, k=k)
-    assert noop_evaluator.process_stochastic_qoi(metric_node2, mean=5., std=2.) == 5. - k*2.
-
-def test_process_stochastic_qoi_margin_penalizes_spread(noop_evaluator):
-    metric_node = MetricNode('M', direction=-1, stochastic_=StochasticMetricType.MARGIN, k=2.)
-
-    robust = noop_evaluator.process_stochastic_qoi(metric_node, mean=5., std=2.)
-    less_spread = noop_evaluator.process_stochastic_qoi(metric_node, mean=5., std=.5)
-
-    # Same mean, less scatter --> better (lower) value for a minimization metric
-    assert less_spread < robust
-
-def test_process_stochastic_qoi_margin_compared_with_mean(noop_evaluator):
-    metric_node_mean = MetricNode("M1", direction=-1, stochastic_=StochasticMetricType.MEAN, k=2.)
-    metric_node_margin_max = MetricNode("M2", direction=1, stochastic_=StochasticMetricType.MARGIN, k=2.)
-    metric_node_margin_min = MetricNode("M3", direction=-1, stochastic_=StochasticMetricType.MARGIN, k=2.)
-
-    mean = noop_evaluator.process_stochastic_qoi(metric_node_mean, mean=5., std=2.)
-    max = noop_evaluator.process_stochastic_qoi(metric_node_margin_max, mean=5., std=2.)
-    min = noop_evaluator.process_stochastic_qoi(metric_node_margin_min, mean=5., std=2.)
-
-    assert max < mean < min
+    samples = space.get_random_samples(10)
+    assert samples.shape == (10, 2)
+    assert np.all(samples[:, 1] == expected_mean)
+    assert samples[:, 0].std() > 0.
 
 
-def test_process_stochastic_qoi_quantile_not_implemented(noop_evaluator):
-    metric_node = MetricNode('M', direction=-1, stochastic_=StochasticMetricType.QUANTILE)
-    with pytest.raises(NotImplementedError):
-        noop_evaluator.process_stochastic_qoi(metric_node, mean=5., std=2.)
+"""#####################################
+### 5. StochasticDSGEvaluator.evaluate #
+#####################################"""
 
 
-"""#################################
-### 6. Monte Carlo propagation   ###
-#################################"""
-
-
-def test_uq_method_mc_statistics(n):
-    """MC over a pass-through function recovers the parameter distribution moments"""
-    par_a = InputParameterNode('A', distribution=cp.Normal(10., 2.))
-    dsg = _dsg_with_parameters(n, [par_a])
-
-    mean, std = UQMethod.mc(dsg, lambda dsg_, sample: sample[par_a], n=5000)
-
-    assert mean == pytest.approx(10., abs=.15)
-    assert std == pytest.approx(2., abs=.15)
-
-
-def test_uq_method_mc_deterministic_function(n):
-    """A function that ignores the parameters has zero variance"""
-    par_a = InputParameterNode('A', distribution=cp.Normal(10., 2.))
-    dsg = _dsg_with_parameters(n, [par_a])
-
-    mean, std = UQMethod.mc(dsg, lambda dsg_, sample: 7., n=50)
-
-    assert mean == 7.
-    assert std == 0.
-
-
-def test_uq_method_mc_uses_sampled_values(n):
-    """Every MC iteration draws a fresh sample and passes it to the evaluation function"""
-    par_a = InputParameterNode('A', distribution=cp.Normal(0., 1.))
-    dsg = _dsg_with_parameters(n, [par_a])
-
-    seen = []
-
-    def _func(dsg_, sample):
-        seen.append(sample[par_a])
-        # The sample is also readable off the graph instance
-        assert dsg_.input_parameter_values(par_a) == sample[par_a]
-        return sample[par_a]
-
-    UQMethod.mc(dsg, _func, n=25)
-
-    assert len(seen) == 25
-    assert len(set(seen)) == 25  # All draws distinct
-
-
-def test_uq_method_mc_scales_with_parameter_spread(n):
-    """More parameter scatter propagates to more output scatter"""
-    def _std_for(sigma):
-        par = InputParameterNode('A', distribution=cp.Normal(0., sigma))
-        dsg = _dsg_with_parameters(n, [par])
-        _, std = UQMethod.mc(dsg, lambda dsg_, sample: 2.*sample[par], n=4000)
-        return std
-
-    assert _std_for(1.) < _std_for(4.)
-
-
-def test_uq_method_mc_multiple_parameters(n):
-    """Independent parameters combine: var(a+b) = var(a) + var(b)"""
-    par_a = InputParameterNode('A', distribution=cp.Normal(0., 3.))
-    par_b = InputParameterNode('B', distribution=cp.Normal(0., 4.))
-    dsg = _dsg_with_parameters(n, [par_a, par_b])
-
-    mean, std = UQMethod.mc(dsg, lambda dsg_, sample: sample[par_a] + sample[par_b], n=20000)
-
-    assert mean == pytest.approx(0., abs=.2)
-    assert std == pytest.approx(5., abs=.25)  # sqrt(3^2 + 4^2)
-
-
-"""#################################
-### 7. Robust optimization       ###
-#################################"""
-
-
-class RobustBeamEvaluator(DSGEvaluator):
+class StochasticBeamEvaluator(StochasticDSGEvaluator):
     """
-    Small robust optimization problem: pick a material and a thickness for a beam under an uncertain load.
+    Small stochastic problem: pick a material and a thickness for a beam under an uncertain load.
 
-    Design variables:
     - `material`: selection choice between 'steel' (stiff, heavy) and 'alu' (compliant, light)
     - `t`: continuous thickness
-
-    Uncertain parameters:
-    - `load`: applied load (normal)
-    - `E_steel` / `E_alu`: material stiffness, only present for the selected material
-
-    Metrics:
-    - `mass` is deterministic (no uncertainty)
-    - `deflection` is stochastic: evaluated by Monte Carlo and reduced with the metric's
-      StochasticMetricType (MEAN or MARGIN) --> this is what makes the problem *robust*
+    - `load`: uncertain applied load; `E_steel` / `E_alu`: stiffness, only present for the selected material
+    - `mass` is deterministic; `deflection` is stochastic
+    - `stress` is an optional constraint, present only in the steel branch
     """
-
-    n_mc = 200
 
     stiffness = {'steel': 210., 'alu': 70.}
     density = {'steel': 7.8, 'alu': 2.7}
 
-    def __init__(self, k=2., stochastic=StochasticMetricType.MARGIN, n_mc=None):
-        self.k = k
-        self.stochastic = stochastic
-        if n_mc is not None:
-            self.n_mc = n_mc
+    def __init__(self, stress_ref: float = None):
+        self.seen_parameters: List[Dict] = []
 
-        self.n_evaluations = 0
-        self.mc_samples_seen = []
+        self.par_load = InputParameterNode('load')
+        self.par_e = {'steel': InputParameterNode('E_steel'), 'alu': InputParameterNode('E_alu')}
 
-        self.par_load = InputParameterNode('load', distribution=cp.Normal(100., 20.))
-        self.par_e = {
-            'steel': InputParameterNode('E_steel', distribution=cp.Normal(210., 10.)),
-            'alu': InputParameterNode('E_alu', distribution=cp.Normal(70., 10.)),
-        }
         self.mass_node = MetricNode('mass', direction=-1, type_=MetricType.OBJECTIVE)
-        self.deflection_node = MetricNode(
-            'deflection', direction=-1, type_=MetricType.OBJECTIVE, stochastic_=stochastic, k=k)
-        self.material_nodes = {}
+        self.deflection_node = MetricNode('deflection', direction=-1, type_=MetricType.OBJECTIVE)
 
+        self.stress_ref = stress_ref
+        self.stress_node = None
+        if stress_ref is not None:
+            self.stress_node = MetricNode('stress', direction=-1, ref=stress_ref, type_=MetricType.CONSTRAINT)
+
+        self.material_nodes = {}
         super().__init__(self._build_dsg())
 
     def _build_dsg(self):
@@ -491,22 +335,24 @@ class RobustBeamEvaluator(DSGEvaluator):
 
         beam = NamedNode('beam')
         thickness = DesignVariableNode('t', bounds=(1., 5.))
+        dsg.add_edges([(beam, self.mass_node), (beam, self.deflection_node),
+                       (beam, self.par_load), (beam, thickness)])
 
-        dsg.add_edges([
-            (beam, self.mass_node),
-            (beam, self.deflection_node),
-            (beam, self.par_load),
-            (beam, thickness),
-        ])
-
-        # Each material carries its own (uncertain) stiffness parameter
         for name in ['steel', 'alu']:
             material_node = NamedNode(name)
             self.material_nodes[name] = material_node
             dsg.add_edge(material_node, self.par_e[name])
 
+        if self.stress_node is not None:
+            dsg.add_edge(self.material_nodes['steel'], self.stress_node)
+
         dsg.add_selection_choice('material', beam, [self.material_nodes['steel'], self.material_nodes['alu']])
-        return dsg.set_start_nodes({beam})
+        dsg = dsg.set_start_nodes({beam})
+
+        dsg.set_input_parameter_value(self.par_load, ot.Normal(100., 20.))
+        dsg.set_input_parameter_value(self.par_e['steel'], ot.Normal(210., 10.))
+        dsg.set_input_parameter_value(self.par_e['alu'], ot.Normal(70., 10.))
+        return dsg
 
     def _selected_material(self, dsg: DSGType) -> str:
         for name, material_node in self.material_nodes.items():
@@ -518,291 +364,317 @@ class RobustBeamEvaluator(DSGEvaluator):
         for des_var_node, value in dsg.des_var_values.items():
             if des_var_node.name == 't':
                 return value
-        raise RuntimeError('Thickness not set!')
+        raise RuntimeError('No thickness!')
 
-    def _deflection(self, dsg: DSGType, sample: Dict[InputParameterNode, float]) -> float:
-        """Deflection under the sampled load and stiffness: delta = load / (E * t^3)"""
+    def _evaluate(self, dsg, metric_nodes, parameters):
+        self.seen_parameters.append(parameters)
+
         material = self._selected_material(dsg)
-        load = sample[self.par_load]
-        e_modulus = sample[self.par_e[material]]
-        return 1e3*load / (e_modulus * self._thickness(dsg)**3)
+        thickness = self._thickness(dsg)
+        load = parameters[self.par_load]
+        e_modulus = parameters[self.par_e[material]]
 
-    def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, float]:
-        self.n_evaluations += 1
-
-        # Deterministic metric: no Monte Carlo needed
-        material = self._selected_material(dsg)
-        mass = self.density[material] * self._thickness(dsg)
-
-        # Stochastic metric: run Monte Carlo for THIS design point
-        stochastic_nodes = [mn for mn in metric_nodes if mn.stochastic is not None]
-        value_map = {}
-        for stochastic_node in stochastic_nodes:
-            value_map.update(self.propagate_uncertainty("MC", self._deflection, dsg, stochastic_node, n=self.n_mc))
-
-        self.mc_samples_seen.append(len(dsg.input_parameter_values))
-        value_map[self.mass_node] = mass
-        return value_map
+        values = {
+            self.mass_node: self.density[material]*thickness,
+            self.deflection_node: load / (e_modulus*thickness**3),
+        }
+        if self.stress_node is not None and self.stress_node in metric_nodes:
+            values[self.stress_node] = load / thickness**2
+        return values
 
 
 @pytest.fixture
-def robust_evaluator():
-    return RobustBeamEvaluator(n_mc=100)
+def beam():
+    return StochasticBeamEvaluator()
 
 
-def test_robust_problem_structure(robust_evaluator):
-    """The uncertain parameters do not enlarge the design space"""
-    des_vars = robust_evaluator.des_vars
-
-    assert [dv.name for dv in des_vars] == ['material', 't']
-    assert des_vars[0].is_discrete
-    assert des_vars[0].n_opts == 2
-    assert not des_vars[1].is_discrete
-    assert tuple(des_vars[1].bounds) == (1., 5.)
-
-    assert len(robust_evaluator.objectives) == 2
-    assert {obj.name for obj in robust_evaluator.objectives} == {'mass', 'deflection'}
-    assert len(robust_evaluator.constraints) == 0
-
-    # 3 parameters in the design space graph, but only 2 in any single architecture
-    assert len(robust_evaluator.input_parameter_nodes) == 3
+def _evaluate(evaluator, x, n_evaluations=20, seed=42, method_class=MonteCarlo, **kwargs):
+    """Evaluate one architecture standalone, the way `evaluate` is meant to be called"""
+    dsg, _, _ = evaluator.get_graph(x)
+    uq_method = method_class(evaluator.param_space, n_evaluations=n_evaluations, seed=seed, **kwargs)
+    return dsg, evaluator.evaluate(dsg, uq_method.get_samples(), uq_method)
 
 
-def test_robust_problem_monte_carlo_per_design_point(robust_evaluator):
-    """Each evaluated design point gets its own Monte Carlo run"""
-    for opt_idx in range(2):
-        graph, _, _ = robust_evaluator.get_graph([opt_idx, 3.])
-        obj, con = robust_evaluator.evaluate(graph)
+def test_evaluate_passes_a_realization_not_an_index(beam):
+    """Regression: the sample *index* was once handed to _evaluate, so every sample came out identical"""
+    _evaluate(beam, [0, 3.], n_evaluations=15)
 
-        assert len(obj) == 2
-        assert len(con) == 0
-        assert all(np.isfinite(obj))
-
-        # Only the parameters existing in this architecture were sampled
-        assert len(graph.input_parameter_values) == 2
-        assert robust_evaluator.par_load in graph.input_parameter_values
-
-    assert robust_evaluator.n_evaluations == 2
+    assert len(beam.seen_parameters) == 15
+    loads = [parameters[beam.par_load] for parameters in beam.seen_parameters]
+    assert all(isinstance(load, float) for load in loads)
+    assert len(set(loads)) == 15
+    assert np.std(loads) > 0.
 
 
-def test_robust_problem_metric_values_stored_on_instance(robust_evaluator):
-    graph, _, _ = robust_evaluator.get_graph([0, 3.])
-    robust_evaluator.evaluate(graph)
+def test_evaluate_realizations_follow_the_parameter_space_order(beam):
+    """A realization is an array indexed by position: the node each column belongs to has to be the one the
+    parameter space names, or every parameter silently takes another's value"""
+    dsg, _ = _evaluate(beam, [0, 3.], n_evaluations=5)
 
-    metric_values = graph.metric_values
-    assert len(metric_values) == 2
-    assert all(np.isfinite(value) for value in metric_values.values())
+    space = beam.param_space
+    samples = MonteCarlo(space, n_evaluations=5, seed=42).get_samples()
+    by_name = {node.name: value for node, value in beam.seen_parameters[0].items()}
 
-    # The template graph is not mutated by evaluating an instance
-    assert robust_evaluator.graph.metric_values == {}
-
-
-def test_robust_problem_thicker_beam_deflects_less(robust_evaluator):
-    """Sanity check of the underlying model through the full MC pipeline"""
-    def _deflection_for(thickness):
-        graph, _, _ = robust_evaluator.get_graph([0, thickness])
-        obj, _ = robust_evaluator.evaluate(graph)
-        return dict(zip([o.name for o in robust_evaluator.objectives], obj))['deflection']
-
-    assert _deflection_for(4.) < _deflection_for(2.)
+    for i, name in enumerate(space.parameter_names):
+        assert by_name[name] == pytest.approx(samples[0, i])
 
 
-def test_robust_problem_margin_is_conservative():
-    """The MARGIN formulation is never better than the MEAN one for a minimization objective"""
-    x = [0, 3.]
+def test_evaluate_returns_a_stochastic_results(beam):
+    _, result = _evaluate(beam, [0, 3.])
 
-    mean_eval = RobustBeamEvaluator(stochastic=StochasticMetricType.MEAN, n_mc=2000)
-    graph, _, _ = mean_eval.get_graph(x)
-    mean_obj, _ = mean_eval.evaluate(graph)
-    i_deflection = [o.name for o in mean_eval.objectives].index('deflection')
-
-    margin_eval = RobustBeamEvaluator(stochastic=StochasticMetricType.MARGIN, k=2., n_mc=2000)
-    graph, _, _ = margin_eval.get_graph(x)
-    margin_obj, _ = margin_eval.evaluate(graph)
-
-    assert margin_obj[i_deflection] > mean_obj[i_deflection]
+    assert isinstance(result, StochasticResults)
+    assert len(result.outputs) == len(beam.objectives) + len(beam.constraints)
+    assert len(result.outputs[0].to_numpy()) == 20
 
 
-def test_robust_problem_k_controls_conservatism():
-    """A larger k penalizes scatter more heavily"""
-    x = [1, 2.]
-    i_deflection = None
-    values = []
-    for k in [0., 1., 4.]:
-        evaluator = RobustBeamEvaluator(stochastic=StochasticMetricType.MARGIN, k=k, n_mc=2000)
-        graph, _, _ = evaluator.get_graph(x)
-        obj, _ = evaluator.evaluate(graph)
-        if i_deflection is None:
-            i_deflection = [o.name for o in evaluator.objectives].index('deflection')
-        values.append(obj[i_deflection])
+def test_evaluate_stores_a_stochastic_output_per_metric(beam):
+    dsg, _ = _evaluate(beam, [0, 3.])
 
-    assert values[0] < values[1] < values[2]
+    for metric_node in dsg.metric_nodes:
+        value = dsg.metric_value(metric_node)
+        assert isinstance(value, StochasticOutput)
+        assert len(value.to_numpy()) == 20
+
+    # The deflection scatters (it depends on the parameters), the mass does not
+    assert dsg.metric_value(beam.deflection_node).std() > 0.
+    assert dsg.metric_value(beam.mass_node).std() == pytest.approx(0.)
 
 
-def test_robust_problem_material_choice_changes_uncertainty():
-    """
-    Steel and aluminium have the same absolute stiffness scatter, but aluminium's is much larger
-    relative to its mean --> aluminium is the less robust choice.
-    """
-    evaluator = RobustBeamEvaluator(stochastic=StochasticMetricType.MEAN, n_mc=4000)
-    i_deflection = [o.name for o in evaluator.objectives].index('deflection')
+def test_evaluate_stores_physical_values(beam):
+    """No objective/constraint sign conventions are applied by the evaluator"""
+    dsg, _ = _evaluate(beam, [0, 3.])
 
-    def _stats_for(opt_idx):
-        graph, _, _ = evaluator.get_graph([opt_idx, 3.])
-        obj, _ = evaluator.evaluate(graph)
-        return obj[i_deflection]
-
-    steel = _stats_for(0)
-    alu = _stats_for(1)
-
-    # Aluminium is more compliant, so it deflects more
-    assert alu > steel
+    assert dsg.metric_value(beam.mass_node).mean() == pytest.approx(7.8*3.)
+    assert np.all(dsg.metric_value(beam.deflection_node).to_numpy() > 0.)
 
 
-def test_robust_problem_over_all_discrete_design_points(robust_evaluator):
-    """Run the full pipeline over every discrete design point, as an optimizer would"""
-    assert robust_evaluator.get_n_valid_designs() == 2
+def test_evaluated_instances_keep_their_own_outputs(beam):
+    """Every evaluated architecture stores its own stochastic outputs"""
+    steel, _ = _evaluate(beam, [0, 3.])
+    alu, _ = _evaluate(beam, [1, 3.])
 
-    x_all, is_active_all = robust_evaluator.get_all_discrete_x()
-    assert x_all.shape[0] == 2
-
-    results = []
-    for x_discrete in x_all:
-        x = [int(x_discrete[0]), 3.]
-        graph, x_imputed, is_active = robust_evaluator.get_graph(x)
-
-        obj, con = robust_evaluator.evaluate(graph)
-        assert all(np.isfinite(obj))
-        assert len(graph.input_parameter_values) == 2
-        results.append(obj)
-
-    assert len(results) == 2
-    assert robust_evaluator.n_evaluations == 2
-
-    # Every design point got its own Monte Carlo run of the configured size
-    assert robust_evaluator.mc_samples_seen == [2, 2]
+    means = [dsg.metric_value(beam.deflection_node).mean() for dsg in (steel, alu)]
+    assert means[0] != means[1]
+    assert means[0] < means[1]  # steel is stiffer, so it deflects less
 
 
-def test_robust_problem_random_design_points(robust_evaluator):
-    """Random design vectors all evaluate to finite robust objective values"""
-    for _ in range(10):
-        x = [dv.rand() for dv in robust_evaluator.des_vars]
-        graph, x_imputed, is_active = robust_evaluator.get_graph(x)
+def test_evaluate_writes_each_constraint_its_own_output():
+    """Regression: constraints were written back with the objective's column index, so a constraint node silently
+    ended up holding an objective's samples"""
+    evaluator = StochasticBeamEvaluator(stress_ref=100.)
+    n_obj = len(evaluator.objectives)
+    assert len(evaluator.constraints) == 1
 
-        obj, con = robust_evaluator.evaluate(graph)
-        assert len(obj) == 2
-        assert all(np.isfinite(obj))
-        assert all(value > 0 for value in obj)
+    steel, result = _evaluate(evaluator, [0, 3.])
+    assert evaluator.stress_node in steel.metric_nodes
+
+    stored = steel.metric_value(evaluator.stress_node)
+    assert isinstance(stored, StochasticOutput)
+    assert np.allclose(stored.to_numpy(), result.outputs[n_obj].to_numpy())
+
+    # ... and that is the stress, not one of the objectives
+    for i in range(n_obj):
+        assert not np.allclose(stored.to_numpy(), result.outputs[i].to_numpy())
+
+
+def test_evaluate_substitutes_absent_constraints_with_their_reference():
+    """A constraint node that does not exist in an architecture takes its reference value, so it is satisfied"""
+    evaluator = StochasticBeamEvaluator(stress_ref=100.)
+    n_obj = len(evaluator.objectives)
+
+    alu, result = _evaluate(evaluator, [1, 3.])  # no stress node in the alu branch
+    assert evaluator.stress_node not in alu.metric_nodes
+
+    assert np.all(result.outputs[n_obj].to_numpy() == 100.)
+    assert alu.metric_value(evaluator.stress_node) is None
+
+
+def test_export_handles_stochastic_outputs(beam):
+    """Regression: the export once read a removed `assigned_statistics`, and formatted the value as a float"""
+    dsg, _ = _evaluate(beam, [0, 3.], n_evaluations=10)
+
+    dsg._get_graph_for_export()
+    title = beam.deflection_node.get_export_title()
+    assert 'μ=' in title and 'σ=' in title
 
 
 """#################################
-### 8. Metric statistics storage ###
+### 6. Stochastic optimization   ###
 #################################"""
 
 
-
-def test_set_get_metric_statistics(n):
-    metric_node = MetricNode('M', direction=-1)
-
-    dsg = BasicDSG()
-    dsg.add_edges([(n[0], metric_node)])
-    dsg = dsg.set_start_nodes({n[0]})
-
-    assert dsg.metric_statistics(metric_node) is None
-    assert dsg.all_metric_statistics == {}
-
-    dsg.set_metric_statistics(metric_node, mean=5., std=2., method='MC', n_samples=50)
-    statistics = dsg.metric_statistics(metric_node)
-    assert (statistics.mean, statistics.std, statistics.n_samples) == (5., 2., 50)
-
-    # The map is a copy: mutating it must not affect the graph
-    all_statistics = dsg.all_metric_statistics
-    all_statistics[metric_node] = MetricStatistics(mean=99., std=0.)
-    assert dsg.metric_statistics(metric_node).mean == 5.
-
-    dsg.reset_metric_statistics()
-    assert dsg.metric_statistics(metric_node) is None
+def _problem(evaluator, n_evaluations=50, seed=42, **kwargs):
+    uq_method = MonteCarlo(evaluator.param_space, n_evaluations=n_evaluations, seed=seed)
+    return evaluator.get_problem(uq_method=uq_method, **kwargs)
 
 
-def test_metric_statistics_survive_copy_and_derivation(n):
-    """Statistics must be carried through both DSG instance constructors"""
-    metric_node = MetricNode('M', direction=-1, type_=MetricType.OBJECTIVE)
+def test_problem_shape_matches_the_evaluator():
+    """Regression: n_obj and the constraint measures were once passed under keywords the base class does not
+    take, so they landed in **kwargs and were silently ignored"""
+    evaluator = StochasticBeamEvaluator(stress_ref=100.)
+    problem = _problem(evaluator, n_evaluations=10)
 
-    dsg = BasicDSG()
-    dsg.add_edges([(n[0], metric_node)])
-    dsg.add_selection_choice('C1', n[0], [n[1], n[2]])
-    dsg = dsg.set_start_nodes({n[0]})
-
-    dsg.set_metric_statistics(metric_node, mean=1., std=.5)
-
-    # get_for_kept_edges
-    assert dsg.copy().metric_statistics(metric_node).mean == 1.
-
-    # get_for_adjusted (used while deriving an architecture)
-    graph, _, _ = GraphProcessor(dsg).get_graph([0])
-    assert graph.metric_statistics(metric_node).mean == 1.
+    assert problem.n_obj == len(evaluator.objectives) == 2
+    assert problem.n_ieq_constr == len(evaluator.constraints) == 1
+    assert problem.n_var == len(evaluator.des_vars)
 
 
-def test_propagate_uncertainty_stores_statistics(robust_evaluator):
-    """propagate_uncertainty records the raw statistics on the DSG instance it was given"""
-    graph, _, _ = robust_evaluator.get_graph([0, 3.])
-    assert graph.all_metric_statistics == {}
+def test_problem_with_constraints_can_be_built():
+    """Regression: con.dir is a Direction enum, so comparing it to an int raised and no constrained stochastic
+    problem could be constructed at all"""
+    evaluator = StochasticBeamEvaluator(stress_ref=100.)
+    problem = _problem(evaluator, n_evaluations=10)
 
-    value_map = robust_evaluator.propagate_uncertainty(
-        'MC', robust_evaluator._deflection, graph, robust_evaluator.deflection_node, n=50)
-
-    statistics = graph.metric_statistics(robust_evaluator.deflection_node)
-    assert statistics is not None
-    assert statistics.method == 'MC'
-    assert statistics.n_samples == 50
-    assert statistics.std > 0
-
-    # The returned (reduced) value is exactly the reduction of the stored statistics
-    assert value_map[robust_evaluator.deflection_node] == pytest.approx(
-        statistics.mean + robust_evaluator.k*statistics.std)
+    assert problem.con_ref == [(False, 100.)]  # minimized constraint, so not flipped
 
 
-def test_robust_problem_stores_statistics(robust_evaluator):
-    """A full evaluate() records statistics for stochastic metrics only"""
-    graph, _, _ = robust_evaluator.get_graph([0, 3.])
-    robust_evaluator.evaluate(graph)
+def test_problem_uses_the_methods_parameter_space():
+    """The problem has no parameter space of its own: it reads the one its UQ method propagates"""
+    evaluator = StochasticBeamEvaluator()
+    problem = _problem(evaluator, n_evaluations=10)
 
-    statistics = graph.metric_statistics(robust_evaluator.deflection_node)
-    assert statistics is not None
-    assert statistics.n_samples == robust_evaluator.n_mc
-
-    # The deterministic metric gets a value but no statistics
-    assert graph.metric_value(robust_evaluator.mass_node) is not None
-    assert graph.metric_statistics(robust_evaluator.mass_node) is None
+    assert problem.param_space is problem.uq_method.param_space
+    assert problem.param_space.parameter_names == ['load', 'E_steel', 'E_alu']
 
 
-def test_robust_problem_statistics_reduce_to_stored_value():
-    """The stored metric value is exactly the reduction of the stored statistics"""
-    for stochastic, k in [(StochasticMetricType.MEAN, 2.), (StochasticMetricType.MARGIN, 2.)]:
-        evaluator = RobustBeamEvaluator(stochastic=stochastic, k=k, n_mc=200)
-        graph, _, _ = evaluator.get_graph([0, 3.])
-        evaluator.evaluate(graph)
+def test_problem_measures_take_effect():
+    """Regression: the constraint measure was once dropped, so everything reduced with Mean()"""
+    evaluator = StochasticBeamEvaluator(stress_ref=100.)
+    problem = _problem(evaluator, obj_measure=[Margin(k=2.), Mean()], constr_measure=[Quantile(q=.9)])
 
-        statistics = graph.metric_statistics(evaluator.deflection_node)
-        value = graph.metric_value(evaluator.deflection_node)
+    assert [type(m).__name__ for m in problem.obj_measure] == ['Margin', 'Mean']
+    assert [type(m).__name__ for m in problem.ieq_constr_measure] == ['Quantile']
 
-        # deflection is minimized (dir = -1), so the margin is mean + k*std
-        expected = statistics.mean if stochastic == StochasticMetricType.MEAN \
-            else statistics.mean + k*statistics.std
-        assert value == pytest.approx(expected)
+    out = problem.evaluate(np.array([[0, 3.]]), return_as_dictionary=True)
+    result = out['stochastic'][0]
+
+    # Objectives are ordered by name, so deflection is first
+    assert out['F'][0, 0] == pytest.approx(result.outputs[0].reduce(Margin(k=2.)))
+    assert out['F'][0, 0] > result.outputs[0].mean()
+    assert out['G'][0, 0] == pytest.approx(result.outputs[2].reduce(Quantile(q=.9)) - 100.)
 
 
-def test_robust_problem_statistics_isolated_between_design_points(robust_evaluator):
-    """Each evaluated instance holds its own statistics; the template graph holds none"""
-    graph_a, _, _ = robust_evaluator.get_graph([0, 2.])
-    graph_b, _, _ = robust_evaluator.get_graph([0, 5.])
+def test_problem_evaluation():
+    evaluator = StochasticBeamEvaluator()
+    problem = _problem(evaluator)
 
-    robust_evaluator.evaluate(graph_a)
-    robust_evaluator.evaluate(graph_b)
+    out = problem.evaluate(np.array([[0, 2.], [1, 4.]]), return_as_dictionary=True)
 
-    statistics_a = graph_a.metric_statistics(robust_evaluator.deflection_node)
-    statistics_b = graph_b.metric_statistics(robust_evaluator.deflection_node)
+    assert out['F'].shape == (2, 2)
+    assert np.all(np.isfinite(out['F']))
 
-    # A thicker beam deflects less, so the two design points must not share statistics
-    assert statistics_a.mean > statistics_b.mean
-    assert robust_evaluator.graph.all_metric_statistics == {}
+    # Objectives are ordered by name, so mass is the second one; it is minimized and therefore stored as-is
+    assert [objective.name for objective in evaluator.objectives] == ['deflection', 'mass']
+    assert out['F'][0, 1] == pytest.approx(7.8*2.)
+    assert out['F'][1, 1] == pytest.approx(2.7*4.)
+
+
+def test_problem_publishes_the_statistics():
+    evaluator = StochasticBeamEvaluator()
+    problem = _problem(evaluator)
+
+    out = problem.evaluate(np.array([[0, 2.], [1, 4.]]), return_as_dictionary=True)
+
+    assert len(out['stochastic']) == 2
+    for result in out['stochastic']:
+        assert isinstance(result, StochasticResults)
+        assert len(result.outputs) == 2
+
+    # Regression for the original blocker: realizations must actually reach the model
+    deflection = out['stochastic'][0].outputs[0]
+    assert len(deflection.to_numpy()) == 50
+    assert len(set(deflection.to_numpy().tolist())) == 50
+    assert deflection.std() > 0.
+
+
+def test_problem_reported_statistics_reproduce_the_objectives():
+    evaluator = StochasticBeamEvaluator()
+    problem = _problem(evaluator, obj_measure=[Margin(k=1.5), Mean()])
+
+    out = problem.evaluate(np.array([[0, 2.]]), return_as_dictionary=True)
+    result = out['stochastic'][0]
+
+    for j, measure in enumerate(problem.obj_measure):
+        assert out['F'][0, j] == pytest.approx(result.outputs[j].reduce(measure))
+
+
+def test_problem_uses_common_random_numbers():
+    """All design points in a batch see the same realizations"""
+    evaluator = StochasticBeamEvaluator()
+    problem = _problem(evaluator, n_evaluations=20)
+
+    problem.evaluate(np.array([[0, 2.], [0, 2.]]), return_as_dictionary=True)
+
+    first, second = evaluator.seen_parameters[:20], evaluator.seen_parameters[20:]
+    assert [p[evaluator.par_load] for p in first] == [p[evaluator.par_load] for p in second]
+
+
+def test_problem_derives_each_architecture_once_per_evaluation():
+    """The architecture does not depend on the realization, so it must not be rebuilt per sample"""
+    evaluator = StochasticBeamEvaluator()
+    problem = _problem(evaluator, n_evaluations=30)
+
+    n_calls, original = [0], evaluator.get_graph
+
+    def _counting(*args, **kwargs):
+        n_calls[0] += 1
+        return original(*args, **kwargs)
+
+    evaluator.get_graph = _counting
+    problem.evaluate(np.array([[0, 2.], [1, 4.]]), return_as_dictionary=True)
+
+    assert n_calls[0] == 2
+
+
+def test_problem_with_polynomial_chaos():
+    """The UQ method is a plain parameter, so a different one needs no change anywhere else"""
+    evaluator = StochasticBeamEvaluator()
+    uq_method = PolynomialChaos(evaluator.param_space, n_evaluations=40, seed=42, degree=2)
+    problem = evaluator.get_problem(uq_method=uq_method)
+
+    out = problem.evaluate(np.array([[0, 2.]]), return_as_dictionary=True)
+
+    assert np.all(np.isfinite(out['F']))
+    result = out['stochastic'][0]
+
+    # PCE takes its statistics from the fitted expansion, not from the 40 expensive evaluations
+    assert len(result.outputs[0].to_numpy()) > 40
+    assert result.method_result is not None
+
+
+def test_uav_example_end_to_end():
+    """The example is the only hierarchical end-to-end user of the feature"""
+    from adsg_core.examples.robust_uav import RobustUAVEvaluator
+
+    evaluator = RobustUAVEvaluator(k=2.)
+    uq_method = MonteCarlo(evaluator.param_space, n_evaluations=25, seed=42)
+    problem = evaluator.get_problem(uq_method=uq_method, obj_measure=evaluator.obj_measure)
+
+    assert problem.n_obj == 2
+    assert set(problem.param_space.parameter_names) == {'payload', 'headwind', 'drag_factor', 'eta_bat', 'bsfc'}
+
+    x = np.array([evaluator.get_random_design_vector() for _ in range(4)], dtype=float)
+    out = problem.evaluate(x, return_as_dictionary=True)
+
+    assert out['F'].shape == (4, 2)
+    assert np.all(np.isfinite(out['F']))
+
+    # Endurance is maximized, so it is stored negated; the graph keeps the physical value
+    assert np.all(out['F'][:, 0] < 0.)
+    endurance = out['stochastic'][0].outputs[0]
+    assert endurance.mean() > 0.
+    assert endurance.std() > 0.
+
+
+def test_uav_example_statistics_helper():
+    from adsg_core.examples.robust_uav import RobustUAVEvaluator
+
+    evaluator = RobustUAVEvaluator(k=2.)
+    dsg, _, _ = evaluator.get_graph(evaluator.get_random_design_vector())
+
+    statistics = evaluator.evaluate_statistics(dsg, MonteCarlo(evaluator.param_space, n_evaluations=25, seed=1))
+
+    assert statistics['endurance_mean'] > 0.
+    assert statistics['endurance_std'] > 0.
+    assert statistics['endurance_robust'] < statistics['endurance_mean']
+    assert statistics['mass'] > 0.

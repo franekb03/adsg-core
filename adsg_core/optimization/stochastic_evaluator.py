@@ -118,7 +118,7 @@ class StochasticDSGEvaluator(GraphProcessor):
 
         for i, constraint in enumerate(self.constraints):
             if constraint.node in metric_nodes:
-                dsg.set_metric_value(constraint.node, result.outputs[i])
+                dsg.set_metric_value(constraint.node, result.outputs[n_obj+i])
         #TODO Consider rewriting StochasticResult class to return obj, constr tuple of [StochasticOutput], [StochasticOutput].
         # So far this option is chosen because StochasticResult.metric_results is retained this way
         return result

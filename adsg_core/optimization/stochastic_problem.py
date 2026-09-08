@@ -110,7 +110,8 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
                          obj_measure=obj_measure, ieq_constr_measure=constr_measure, nan_policy=nan_policy)
 
         self.obj_is_max = [obj.dir.value > 0 for obj in evaluator.objectives]
-        self.con_ref = [(con.dir > 0, con.ref) for con in evaluator.constraints]
+        # TODO Verify if .value is really needed
+        self.con_ref = [(con.dir.value > 0, con.ref) for con in evaluator.constraints]
 
 
     def _arch_evaluate(self, x: np.ndarray, is_active_out: np.ndarray, f_out: np.ndarray, g_out: np.ndarray,
