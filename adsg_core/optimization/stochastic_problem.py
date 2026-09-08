@@ -24,23 +24,17 @@ SOFTWARE.
 """
 import logging
 import warnings
-import functools
 import numpy as np
 from typing import *
 from concurrent.futures import wait, ProcessPoolExecutor, ThreadPoolExecutor
 
-from adsg_core import InputParameter
-from adsg_core.optimization.evaluator import DSGEvaluator, StochasticDSGEvaluator
+from adsg_core.optimization.stochastic_evaluator import  StochasticDSGEvaluator
 from adsg_core.optimization.problem import DSGDesignSpace
-from adsg_core.optimization.dv_output_defs import DesVar
-from adsg_core.optimization.graph_processor import GraphProcessor
-from adsg_core.optimization.assign_enc.time_limiter import run_timeout
+
 
 try:
-    from sb_arch_opt.problem import ArchOptProblemBase
-    from sb_arch_opt.robust import StochasticArchOptProblem
+    from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
     from sb_arch_opt.uncertainty import *
-    from sb_arch_opt.design_space import ArchDesignSpace
     from pymoo.core.variable import Variable, Real, Integer, Choice
 
     from sb_arch_opt.sampling import TrailRepairWarning
@@ -51,10 +45,7 @@ try:
 except ImportError:
     HAS_SB_ARCH_OPT = False
 
-    class ArchDesignSpace:
-        pass
-
-    class ArchOptProblemBase:
+    class StochasticArchOptProblem:
         pass
 
 __all__ = ['check_dependency', 'DSGStochasticArchOptProblem', 'HAS_SB_ARCH_OPT',
@@ -70,11 +61,11 @@ def check_dependency():
 
 class DSGStochasticArchOptProblem(StochasticArchOptProblem):
     """
-    [SBArchOpt](https://sbarchopt.readthedocs.io/) wrapper for a DSG optimization problem. Note that under the
+    [SBArchOpt](https://sbarchopt.readthedocs.io/) wrapper for a DSG stochastic optimization problem. Note that under the
     hood, SBArchOpt uses [pymoo](https://pymoo.org/).
-    The connection is made between the `ArchOptProblemBase` class (which specifies all information needed to optimize an
-    architecture optimization problem), and the `DSGEvaluator` class, which contains all information for
-    running a DSG architecture optimization problem.
+    The connection is made between the `StochasticArchOptProblem` class (which specifies all information needed to optimize an
+    architecture optimization problem), and the `StochasticDSGEvaluator` class, which contains all information for
+    running a stochastic DSG architecture optimization problem.
 
     Parallel processing is possible by setting `n_parallel` to a number higher than 1.
     By default, assumes parallel processing is done within the thread and therefore starts a multiprocessing pool to
@@ -88,10 +79,10 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
     from pymoo.optimize import minimize
     from sb_arch_opt.algo.pymoo_interface import get_nsga2
 
-    evaluator = ...  # Instance of DSGEvaluator
+    evaluator = ...  # Instance of StochasticDSGEvaluator
 
     algorithm = get_nsga2(pop_size=100)
-    problem = DSGArchOptProblem(evaluator)
+    problem = DSGStochasticArchOptProblem(evaluator, uq_method)
 
     result = minimize(problem, algorithm, termination=('n_eval', 500))
     ```
@@ -109,33 +100,24 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
         self.n_parallel = n_parallel
         self.parallel_processes = parallel_processes
 
-        n_objs = len(evaluator.objectives)
+        n_obj = len(evaluator.objectives)
         n_constr = len(evaluator.constraints)
 
         design_space = DSGDesignSpace(evaluator)
 
-        parameter_nodes = self.evaluator.uncertain_parameter_nodes
-        parameter_space = self.get_parameter_space(parameter_nodes)
 
-
-        super().__init__(design_space, param_space=parameter_space, uq_method=uq_method, n_objs=n_objs, n_ieq_constr=n_constr,
+        super().__init__(design_space, uq_method=uq_method, n_obj=n_obj, n_ieq_constr=n_constr,
                          obj_measure=obj_measure, ieq_constr_measure=constr_measure, nan_policy=nan_policy)
 
         self.obj_is_max = [obj.dir.value > 0 for obj in evaluator.objectives]
         self.con_ref = [(con.dir > 0, con.ref) for con in evaluator.constraints]
 
-    @staticmethod
-    def get_parameter_space(input_parameters_nodes: List[InputParameter]) -> StochasticParameterSpace:
-        space = StochasticParameterSpace()
-        for param_node in input_parameters_nodes:
-            # TODO handle deterministic parameters in sbarchopt
-            param = StochasticParameter(param_node.name, param_node.distribution)
-            space.add_parameter(param)
-        return space
 
     def _arch_evaluate(self, x: np.ndarray, is_active_out: np.ndarray, f_out: np.ndarray, g_out: np.ndarray,
                        h_out: np.ndarray, *args, **kwargs):
-
+        """
+        Overrides parent _arch_evaluate class to integrate it with StochasticDSGEvaluator, but maintains the same functionality.
+        """
         # Correct integer design variables
         self.design_space.round_x_discrete(x)
 
@@ -151,28 +133,37 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
 
         # Sample parameter space
 
-        samples = self.uq_method.get_samples(self.param_space)
+        samples = self.uq_method.get_samples()
 
         # Evaluate architectures
         if self.n_parallel is not None and self.n_parallel > 1:
             executor_class = ProcessPoolExecutor if self.parallel_processes else ThreadPoolExecutor
             with executor_class(max_workers=self.n_parallel) as executor:
-                futures = [executor.submit(self.evaluator.evaluate, dsg, samples) for dsg in dsg_instances]
+                futures = [executor.submit(self.evaluator.evaluate, dsg, samples, self.uq_method) for dsg in dsg_instances]
 
                 wait(futures)
                 results = [fut.result() for fut in futures]
 
         else:
-            results = [self.evaluator.evaluate(dsg) for dsg in dsg_instances]
+            results = [self.evaluator.evaluate(dsg, samples, self.uq_method) for dsg in dsg_instances]
 
         # Process results
-        for i, (obj_values, con_values) in enumerate(results):
-            # Correct directions of objectives to represent minimization
-            f_out[i, :] = [-val if self.obj_is_max[j] else val for j, val in enumerate(obj_values)]
+        self.stochastic_results = results
+        n_obj = self.n_obj
+        n_constr = self.ieq_constr_measure
+        for i, result in enumerate(results):
+            for j in range(n_obj):
+                value = result.outputs[j].reduce(self.obj_measure[j], nan_policy=self.nan_policy)
 
-            # Correct directions and offset constraints to represent g(x) <= 0
-            g_out[i, :] = [(val-self.con_ref[j][1])*(-1 if self.con_ref[j][0] else 1)
-                           for j, val in enumerate(con_values)]
+                # Correct directions of objectives to represent minimization
+                f_out[i, j] = -value if self.obj_is_max[j] else value
+
+            for j in range(self.n_ieq_constr):
+                value = result.outputs[n_obj+j].reduce(n_constr[j], nan_policy=self.nan_policy)
+
+                # Correct directions and offset constraints to represent g(x) <= 0
+                flip, ref = self.con_ref[j]
+                g_out[i, j] = (value-ref)*(-1 if flip else 1)
 
     def _print_extra_stats(self):
         self.get_discrete_rates(show=True)

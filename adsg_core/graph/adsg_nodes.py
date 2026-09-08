@@ -31,10 +31,9 @@ from typing import *
 import networkx as nx
 from collections import OrderedDict
 from adsg_core.graph.graph_edges import *
-import openturns as ot
-from dataclasses import dataclass
+
 __all__ = ['DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
-           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'InputParameter', 'MetricNode', 'MetricType', 'StochasticMetricType', 'EdgeType', 'EdgeTuple',
+           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'InputParameterNode', 'MetricNode', 'MetricType', 'EdgeType', 'EdgeTuple',
            'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode']
 
 
@@ -441,9 +440,10 @@ class DesignVariableNode(DSGNode):
         return f'DV[{self.name}]'
 
 
-class InputParameter(DSGNode):
+class InputParameterNode(DSGNode):
     """
     Node representing input parameter that can be either deterministic or stochastic.
+    # TODO It could be changed to NamedNode if need be
     """
 
     def __init__(self, name, idx=None):
@@ -451,22 +451,12 @@ class InputParameter(DSGNode):
         self.name = name
         self.idx = idx
         self.assigned_value = None      # Only for export
-        super(InputParameter, self).__init__()
-
-    # @property
-    # def is_uncertain(self):
-    #     return self.distribution is not None
-
-    # def sample(self, n: int) -> np.ndarray:
-    #     if self.distribution is None:
-    #         if self.nominal is None:
-    #             raise ValueError(f'Cannot sample parameter {self.name!r}: no distribution or nominal value set')
-    #         return np.full(n, float(self.nominal))
-    #     samples = np.asarray(self.distribution.sample(n))
-    #     return samples.reshape((n,))
+        super(InputParameterNode, self).__init__()
 
     def get_export_title(self) -> str:
-        return f'{self.name} = {self.assigned_value}'
+        if self.assigned_value is not None:
+            return f'{self.name} = {self.assigned_value}'
+        return f'{self.name}'
 
     def get_export_color(self) -> str:
         return _INP_OUT_COLOR
@@ -482,31 +472,6 @@ class MetricType(enum.Flag):
     OBJECTIVE = enum.auto()
     CONSTRAINT = enum.auto()
     OBJ_OR_CON = OBJECTIVE | CONSTRAINT
-
-class StochasticMetricType(enum.Flag):
-    NONE = 0
-    MEAN = enum.auto()
-    MARGIN = enum.auto()
-    QUANTILE = enum.auto()
-
-# @dataclass(frozen=True)
-# class MetricStatistics:
-#     """
-#     Raw statistics of a stochastic metric, as produced by an uncertainty propagation method and *before* being
-#     reduced to the single value the optimizer sees (see `DSGEvaluator.process_stochastic_qoi`).
-#
-#     Stored per DSG instance, so that the mean and standard deviation behind a reduced metric value remain
-#     available after evaluation.
-#     """
-#     mean: float
-#     std: float
-#     method: Optional[str] = None  # Uncertainty propagation method used, e.g. 'MC'
-#     n_samples: Optional[int] = None
-#     quantiles: Optional[Dict[float, float]] = None  # Reserved for StochasticMetricType.QUANTILE
-#
-#     def __str__(self):
-#         return f'mean={self.mean:.4g}, std={self.std:.4g}'
-
 
 class MetricNode(DSGNode):
     """
@@ -542,23 +507,23 @@ class MetricNode(DSGNode):
             else:
                 role_str = ' [↑]' if self.dir > 0 else ' [↓]'
 
-        # Show the statistics a stochastic
-        if self.assigned_statistics is not None:
-            role_str = f' ({self._statistics_str(self.assigned_statistics)})' + role_str
-
         if self.assigned_value is not None:
-            if math.isnan(self.assigned_value):
-                role_str = f' = NaN'+role_str
-            else:
-                role_str = f' = {self.assigned_value:.4g}'+role_str
+            role_str = f' = {self._value_str(self.assigned_value)}'+role_str
 
         return self.name+role_str
 
     @staticmethod
-    def _statistics_str(statistics: 'MetricStatistics') -> str:
-        mean_str = 'NaN' if math.isnan(statistics.mean) else f'{statistics.mean:.4g}'
-        std_str = 'NaN' if math.isnan(statistics.std) else f'{statistics.std:.4g}'
-        return f'μ={mean_str}, σ={std_str}'
+    def _value_str(value) -> str:
+        # An evaluation under uncertainty assigns the whole sampled column (a StochasticOutput) rather than a
+        # single number, so show what characterizes it instead of the value itself
+        # TODO Adjust visualization depending on the type of output distribution TBD
+        if hasattr(value, 'mean') and hasattr(value, 'std'):
+            mean, std = value.mean(), value.std()
+            mean_str = 'NaN' if math.isnan(mean) else f'{mean:.4g}'
+            std_str = 'NaN' if math.isnan(std) else f'{std:.4g}'
+            return f'μ={mean_str}, σ={std_str}'
+
+        return 'NaN' if math.isnan(value) else f'{value:.4g}'
 
     def get_export_color(self) -> str:
         return _INP_OUT_COLOR

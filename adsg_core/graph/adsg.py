@@ -22,10 +22,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-from functools import cached_property
-
+import logging
 import numpy as np
 import openturns as ot
+import warnings
 from typing import *
 import networkx as nx
 from natsort import natsorted
@@ -38,10 +38,28 @@ from adsg_core.graph.incompatibility import *
 from adsg_core.graph.influence_matrix import *
 from adsg_core.graph.choice_constraints import *
 
-__all__ = ['DSG', 'EdgeType', 'CDVNode', 'ChoiceConstraint', 'ChoiceConstraintType', 'DSGType', 'ADSG', 'ADSGType']
+try:
+    from sb_arch_opt.stochastic_problem import StochasticOutput
 
-from sb_arch_opt.uncertainty import StochasticOutput, StochasticParameterSpace, StochasticParameter
+    from sb_arch_opt.sampling import TrailRepairWarning
+    warnings.simplefilter("ignore", category=TrailRepairWarning)
 
+    HAS_SB_ARCH_OPT = True
+
+except ImportError:
+    HAS_SB_ARCH_OPT = False
+
+    class StochasticOutput:
+        pass
+
+__all__ = ['DSG', 'EdgeType', 'CDVNode', 'ChoiceConstraint', 'ChoiceConstraintType', 'DSGType', 'ADSG', 'ADSGType', 'HAS_SB_ARCH_OPT', 'check_dependency']
+
+log = logging.getLogger('adsg.opt')
+
+
+def check_dependency():
+    if not HAS_SB_ARCH_OPT:
+        raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt')
 
 class DSG:
     """
@@ -55,6 +73,7 @@ class DSG:
 
     def __init__(self, _graph=None, _influence_matrix=None, _status_array=None, _choice_con_map=None,
                  _des_var_values=None, _input_parameter_values=None, _metric_values=None, **_):
+        check_dependency()
         self._graph = _graph or self._get_empty_graph()
         self._choice_constraints: List[ChoiceConstraint] = _choice_con_map or []
         self._influence_matrix: Optional[InfluenceMatrix] = _influence_matrix
@@ -62,8 +81,8 @@ class DSG:
 
         self._update_connector_grouping_degrees()
         self._des_var_values: Dict[DesignVariableNode, Union[float, int]] = (_des_var_values or {}).copy()
-        self._input_parameter_values: Dict[InputParameter, Union[ot.Distribution, float]] = (_input_parameter_values or {}).copy()
-        self._metric_values: Dict[MetricNode, float] = (_metric_values or {}).copy()
+        self._input_parameter_values: Dict[InputParameterNode, Union[ot.DistributionImplementation, float]] = (_input_parameter_values or {}).copy()
+        self._metric_values: Dict[MetricNode, Union[StochasticOutput, float]] = (_metric_values or {}).copy()
 
     @staticmethod
     def _get_empty_graph():
@@ -195,7 +214,6 @@ class DSG:
             node.assigned_value = self.input_parameter_value(node)
         for node in self.metric_nodes:
             node.assigned_value = self.metric_value(node)
-            node.assigned_statistics = self.metric_statistics(node)
 
         self._export_prepare(graph)
         return graph
@@ -219,9 +237,9 @@ class DSG:
         """Get all nodes in the graph that are or inherit from the given type"""
         return get_nodes_by_subtype(self._graph, type_)
 
-    """##########################################
-    ### DESIGN VARIABLE AND METRICS FUNCTIONS ###
-    ##########################################"""
+    """############################################################
+    ### DESIGN VARIABLE, INPUT PARAMETERS AND METRICS FUNCTIONS ###
+    ############################################################"""
 
     @property
     def all_des_var_nodes(self) -> List[DesignVariableNode]:
@@ -293,56 +311,40 @@ class DSG:
         self._des_var_values = {}
 
     @property
-    def input_parameter_nodes(self) -> List[InputParameter]:
-        return self.get_nodes_by_type(InputParameter)
+    def input_parameter_nodes(self) -> List[InputParameterNode]:
+        return self.get_nodes_by_type(InputParameterNode)
 
-    def set_input_parameter_value(self, parameter_node: InputParameter, value: Union[ot.Distribution, float]):
+    def set_input_parameter_value(self, parameter_node: InputParameterNode, value: Union[ot.DistributionImplementation, float]):
         """
-        Set the value of a parameter node.
+        Set the value or distribution of a parameter node.
         """
         self._input_parameter_values[parameter_node] = value
 
-    def input_parameter_value(self, parameter_node: InputParameter) -> Optional[float]:
+    def input_parameter_value(self, parameter_node: InputParameterNode) -> Optional[Union[ot.DistributionImplementation, float]]:
         return self._input_parameter_values.get(parameter_node)
 
     @property
-    def input_parameter_values(self):
+    def input_parameter_values(self) -> Dict[InputParameterNode, Union[ot.DistributionImplementation, float]]:
         return self._input_parameter_values.copy()
 
     def reset_input_parameter_values(self):
         self._input_parameter_values = {}
 
-    @cached_property
-    def stochastic_space(self) -> StochasticParameterSpace:
-        space = StochasticParameterSpace()
-        param_nodes = self.input_parameter_nodes
-        for param_node in param_nodes:
-            # TODO handle deterministic parameters in sbarchopt
-            value = self.input_parameter_value(param_node)
-            param = StochasticParameter(param_node.name, value)
-            space.add_parameter(param)
-        return space
-
-    def sample_parameters(self) -> Dict[InputParameter, float]:
-        """Sample all parameter values present in the DSG instance and set the value on graph"""
-
-
     @property
     def metric_nodes(self) -> List[MetricNode]:
         return self.get_nodes_by_type(MetricNode)
 
-
-    def set_metric_value(self, metric_node: MetricNode, value: Union[float, StochasticOutput]):
+    def set_metric_value(self, metric_node: MetricNode, value: Union[StochasticOutput, float]):
         """
         Set the value of a metric node.
         """
         self._metric_values[metric_node] = value
 
-    def metric_value(self, metric_node) -> Optional[float]:
+    def metric_value(self, metric_node) -> Optional[Union[StochasticOutput, float]]:
         return self._metric_values.get(metric_node)
 
     @property
-    def metric_values(self):
+    def metric_values(self) -> Dict[MetricNode, Union[StochasticOutput, float]]:
         return self._metric_values.copy()
 
     def reset_metric_values(self):
@@ -732,7 +734,7 @@ class DSG:
         dec_con_map_copy = self._choice_constraints.copy()
         return self.__class__(_graph=graph_copy, _influence_matrix=self._influence_matrix,
                               _status_array=status_array if status_array is not None else self._status_array,
-                              _choice_con_map=dec_con_map_copy, _des_var_values=self._des_var_values, _uncertain_parameter_values=self._input_parameter_values,
+                              _choice_con_map=dec_con_map_copy, _des_var_values=self._des_var_values, _input_parameter_values=self._input_parameter_values,
                               _metric_values=self._metric_values, **kwargs)
 
     def _mod_graph_adjust_kwargs(self, kwargs):
@@ -748,7 +750,7 @@ class DSG:
         self._mod_graph_adjust_kwargs(kwargs)
         return self.__class__(_graph=graph_copy, _influence_matrix=self._influence_matrix,
                               _status_array=self._status_array, _choice_con_map=self._choice_constraints,
-                              _des_var_values=self._des_var_values, _uncertain_parameter_values=self._input_parameter_values, _metric_values=self._metric_values, **kwargs)
+                              _des_var_values=self._des_var_values, _input_parameter_values=self._input_parameter_values, _metric_values=self._metric_values, **kwargs)
 
     """#########################################
     ### INCOMPATIBILITY CONSTRAINT FUNCTIONS ###

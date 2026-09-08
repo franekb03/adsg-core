@@ -35,7 +35,6 @@ from adsg_core.optimization.assign_enc.time_limiter import run_timeout
 
 try:
     from sb_arch_opt.problem import ArchOptProblemBase
-    from sb_arch_opt.robust import StochasticArchOptProblem
     from sb_arch_opt.design_space import ArchDesignSpace
     from pymoo.core.variable import Variable, Real, Integer, Choice
 

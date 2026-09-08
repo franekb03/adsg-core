@@ -22,7 +22,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+import logging
+
 import numpy as np
+import openturns as ot
+import warnings
 from typing import *
 from adsg_core.graph.adsg_nodes import *
 from adsg_core.optimization.dv_output_defs import *
@@ -35,8 +39,32 @@ from adsg_core.optimization.assign_enc.selector import EncoderSelector
 from adsg_core.optimization.assign_enc.time_limiter import run_timeout
 from adsg_core.optimization.assign_enc.assignment_manager import AssignmentManagerBase
 
-__all__ = ['GraphProcessor', 'MetricType', 'SelChoiceEncoderType']
 
+try:
+    from sb_arch_opt.uncertainty import StochasticParameterSpace, InputParameter
+
+    from sb_arch_opt.sampling import TrailRepairWarning
+    warnings.simplefilter("ignore", category=TrailRepairWarning)
+
+    HAS_SB_ARCH_OPT = True
+
+except ImportError:
+    HAS_SB_ARCH_OPT = False
+
+    class StochasticParameterSpace:
+        pass
+
+    class InputParameter:
+        pass
+
+__all__ = ['GraphProcessor', 'MetricType', 'SelChoiceEncoderType', 'HAS_SB_ARCH_OPT', 'check_dependency']
+
+log = logging.getLogger('adsg.opt')
+
+
+def check_dependency():
+    if not HAS_SB_ARCH_OPT:
+        raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt')
 
 def catch_memory_overflow(func):
     def wrapper(obj: 'GraphProcessor', *args, **kwargs):
@@ -76,6 +104,7 @@ class GraphProcessor:
     _n_combs_cutoff = 1e9
 
     def __init__(self, graph: DSGType, encoding_timeout: float = None, encoder_type: SelChoiceEncoderType = None):
+        check_dependency()
         self._graph: DSGType = self._check_graph(graph)
         self._fixed_values: Dict[int, Union[int, float]] = {}
         self._comb_fixed_mask = None
@@ -380,8 +409,28 @@ class GraphProcessor:
         return self.graph.ordered_choice_nodes(self.graph.des_var_nodes)
 
     @cached_property
-    def uncertain_parameter_nodes(self) -> List[InputParameter]:
-        return sorted(self.graph.get_nodes_by_type(InputParameter), key=lambda n: n.name)
+    def input_parameter_nodes(self) -> List[InputParameterNode]:
+        return sorted(self.graph.get_nodes_by_type(InputParameterNode), key=lambda n: n.name)
+
+    @cached_property
+    def param_space(self) -> StochasticParameterSpace:
+        """
+        Return a stochastic parameter space corresponding to all the parameters defined during initialization.
+        """
+        param_space = StochasticParameterSpace()
+        for node, value in self.graph.input_parameter_values.items():
+            distribution = self.get_parameter_distribution(self.graph.input_parameter_value(node))
+            param_space.add_parameter(InputParameter(node.name, distribution))
+        return param_space
+
+    @staticmethod
+    def get_parameter_distribution(value: Union[ot.DistributionImplementation, float]) -> Union[ot.DistributionImplementation, ot.Dirac]:
+        """
+        Return a distribution corresponding to the given distribution value. Convert deterministic to Dirac
+        """
+        if isinstance(value, (ot.DistributionImplementation, ot.Distribution)):
+            return value
+        return ot.Dirac(float(value))
 
     @cached_property
     def metric_nodes(self) -> List[MetricNode]:
