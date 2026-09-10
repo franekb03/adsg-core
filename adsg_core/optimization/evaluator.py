@@ -22,14 +22,35 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+import logging
 import math
+import warnings
 from typing import *
 from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_nodes import MetricNode
 from adsg_core.optimization.dv_output_defs import *
 from adsg_core.optimization.graph_processor import *
 
-__all__ = ['DSGEvaluator', 'ADSGEvaluator']
+
+try:
+    from sb_arch_opt.uncertainty import StochasticOutput
+
+    from sb_arch_opt.sampling import TrailRepairWarning
+    warnings.simplefilter("ignore", category=TrailRepairWarning)
+
+    HAS_SB_ARCH_OPT = True
+
+except ImportError:
+    HAS_SB_ARCH_OPT = False
+
+    class StochasticOutput:
+        pass
+
+__all__ = ['DSGEvaluator', 'ADSGEvaluator', 'check_dependency', 'HAS_SB_ARCH_OPT']
+
+log = logging.getLogger('adsg.opt')
+
+
 
 
 class DSGEvaluator(GraphProcessor):
@@ -40,6 +61,10 @@ class DSGEvaluator(GraphProcessor):
     Extends `GraphProcessor`, so all its functions are also available.
     """
 
+    def __init__(*args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
     def get_problem(self, n_parallel=None, parallel_processes=True):
         """Get an SBArchOpt problem instance."""
         from adsg_core.optimization.problem import DSGArchOptProblem
@@ -49,7 +74,7 @@ class DSGEvaluator(GraphProcessor):
         raise RuntimeError(f'Metric {objective.name} can either be an objective or a constraint! '
                            f'Specify the metric type using node.type = MetricType.x')
 
-    def evaluate(self, dsg: DSGType) -> Tuple[List[float], List[float]]:
+    def evaluate(self, dsg: DSGType) -> Tuple[List[Union[StochasticOutput, float]], List[Union[StochasticOutput, float]]]:
         """
         Evaluate a DSG instance. Returns a list of objective values and a list of constraint values.
         """

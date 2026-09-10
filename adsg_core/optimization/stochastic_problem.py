@@ -89,10 +89,10 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
     """
 
     def __init__(self, evaluator: StochasticDSGEvaluator,
+                 param_space: StochasticParameterSpace,
                  uq_method: UQMethod,
-                 obj_measure: List[RobustMeasure] = None,
-                 constr_measure: List[RobustMeasure] = None,
-                 nan_policy: str = 'propagate',
+                 obj_scalar: List[Scalarization] = None,
+                 constr_scalar: List[Scalarization] = None,
                  n_parallel=None, parallel_processes=True):
         check_dependency()
 
@@ -106,11 +106,10 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
         design_space = DSGDesignSpace(evaluator)
 
 
-        super().__init__(design_space, uq_method=uq_method, n_obj=n_obj, n_ieq_constr=n_constr,
-                         obj_measure=obj_measure, ieq_constr_measure=constr_measure, nan_policy=nan_policy)
+        super().__init__(design_space, param_space=param_space, uq_method=uq_method, n_obj=n_obj, n_ieq_constr=n_constr,
+                         obj_scalar=obj_scalar, ieq_constr_scalar=constr_scalar)
 
         self.obj_is_max = [obj.dir.value > 0 for obj in evaluator.objectives]
-        # TODO Verify if .value is really needed
         self.con_ref = [(con.dir.value > 0, con.ref) for con in evaluator.constraints]
 
 
@@ -132,39 +131,29 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
             x[i, :] = x_imputed
             is_active_out[i, :] = is_active_arch
 
-        # Sample parameter space
-
-        samples = self.uq_method.get_samples()
-
-        # Evaluate architectures
+        # Evaluate architectures for each DSG instance
         if self.n_parallel is not None and self.n_parallel > 1:
             executor_class = ProcessPoolExecutor if self.parallel_processes else ThreadPoolExecutor
             with executor_class(max_workers=self.n_parallel) as executor:
-                futures = [executor.submit(self.evaluator.evaluate, dsg, samples, self.uq_method) for dsg in dsg_instances]
+                futures = [executor.submit(self.evaluator.evaluate, dsg) for dsg in dsg_instances]
 
                 wait(futures)
                 results = [fut.result() for fut in futures]
 
         else:
-            results = [self.evaluator.evaluate(dsg, samples, self.uq_method) for dsg in dsg_instances]
+            results = [self.evaluator.evaluate(dsg) for dsg in dsg_instances]
+
+        self.stochastic_results = []
 
         # Process results
-        self.stochastic_results = results
-        n_obj = self.n_obj
-        n_constr = self.ieq_constr_measure
-        for i, result in enumerate(results):
-            for j in range(n_obj):
-                value = result.outputs[j].reduce(self.obj_measure[j], nan_policy=self.nan_policy)
-
-                # Correct directions of objectives to represent minimization
-                f_out[i, j] = -value if self.obj_is_max[j] else value
-
-            for j in range(self.n_ieq_constr):
-                value = result.outputs[n_obj+j].reduce(n_constr[j], nan_policy=self.nan_policy)
-
-                # Correct directions and offset constraints to represent g(x) <= 0
-                flip, ref = self.con_ref[j]
-                g_out[i, j] = (value-ref)*(-1 if flip else 1)
+        for x_i, (obj_values, con_values) in enumerate(results):
+            # Create StochasticResults with the obj, con returned by evaluate()
+            self.stochastic_results.append(StochasticResults(obj_values+con_values))
+            # Reduce the sampled responses of each design point to the values the optimizer sees
+            for f_i, output in enumerate(obj_values):
+                f_out[x_i, f_i] = output.reduce(self.obj_scalar[f_i])
+            for g_i, output in enumerate(con_values):
+                g_out[x_i, g_i] = output.reduce(self.ieq_constr_scalar[g_i])
 
     def _print_extra_stats(self):
         self.get_discrete_rates(show=True)

@@ -41,7 +41,7 @@ from adsg_core.optimization.assign_enc.assignment_manager import AssignmentManag
 
 
 try:
-    from sb_arch_opt.uncertainty import StochasticParameterSpace, InputParameter
+    from sb_arch_opt.uncertainty import StochasticParameterSpace, StochasticParameter, StochasticOutput
 
     from sb_arch_opt.sampling import TrailRepairWarning
     warnings.simplefilter("ignore", category=TrailRepairWarning)
@@ -55,6 +55,9 @@ except ImportError:
         pass
 
     class InputParameter:
+        pass
+
+    class StochasticOutput:
         pass
 
 __all__ = ['GraphProcessor', 'MetricType', 'SelChoiceEncoderType', 'HAS_SB_ARCH_OPT', 'check_dependency']
@@ -418,11 +421,11 @@ class GraphProcessor:
         Return a stochastic parameter space corresponding to all the parameters defined during initialization.
         Handles both stochastic and deterministic parameters.
         """
-        param_space = StochasticParameterSpace()
-        for node, value in self.graph.input_parameter_values.items():
-            distribution = self.graph.input_parameter_value(node)
-            param_space.add_parameter(InputParameter(node.name, distribution))
-        return param_space
+        parameters = []
+        for parameter_node in self.input_parameter_nodes:
+            if parameter_node.is_stochastic:
+                parameters.append(StochasticParameter(parameter_node.name, parameter_node.value))
+        return StochasticParameterSpace(parameters)
 
     @cached_property
     def metric_nodes(self) -> List[MetricNode]:

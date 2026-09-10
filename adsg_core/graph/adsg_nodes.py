@@ -22,20 +22,45 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+import logging
 import math
 import copy
 import enum
 import itertools
+import warnings
+
 import numpy as np
+import openturns as ot
 from typing import *
 import networkx as nx
 from collections import OrderedDict
 from adsg_core.graph.graph_edges import *
 
-__all__ = ['DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
-           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'InputParameterNode', 'MetricNode', 'MetricType', 'EdgeType', 'EdgeTuple',
-           'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode']
 
+try:
+    from sb_arch_opt.uncertainty import StochasticOutput
+
+    from sb_arch_opt.sampling import TrailRepairWarning
+    warnings.simplefilter("ignore", category=TrailRepairWarning)
+
+    HAS_SB_ARCH_OPT = True
+
+except ImportError:
+    HAS_SB_ARCH_OPT = False
+
+    class StochasticOutput:
+        pass
+
+__all__ = ['check_dependency', 'DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
+           'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'InputParameterNode', 'MetricNode', 'MetricType', 'EdgeType', 'EdgeTuple',
+           'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode', 'HAS_SB_ARCH_OPT']
+
+log = logging.getLogger('adsg.opt')
+
+
+def check_dependency():
+    if not HAS_SB_ARCH_OPT:
+        raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt')
 
 class NodeExportShape(enum.Enum):
     CIRCLE = 0
@@ -57,6 +82,7 @@ class DSGNode:
 
     def __init__(self, obj_id=None, decision_id=None, option_id=None, src_decision_link_key=None,
                  tgt_decision_link_key=None, perm_decision_link_key=None, obj_ref=None):
+        check_dependency()
         self._obj_id = obj_id
         self._id = None
         self.update_node_id()
@@ -443,20 +469,27 @@ class DesignVariableNode(DSGNode):
 class InputParameterNode(DSGNode):
     """
     Node representing input parameter that can be either deterministic or stochastic.
-    # TODO It could be changed to NamedNode if need be
     """
 
-    def __init__(self, name, idx=None):
+    def __init__(self, name, value: Union[ot.DistributionImplementation, float], idx=None):
 
         self.name = name
         self.idx = idx
+        self.value = value
         self.assigned_value = None      # Only for export
         super(InputParameterNode, self).__init__()
+
+    @property
+    def is_stochastic(self) -> bool:
+        if isinstance(self.value, ot.DistributionImplementation):
+            return True
+        else:
+            return False
 
     def get_export_title(self) -> str:
         if self.assigned_value is not None:
             return f'{self.name} = {self.assigned_value}'
-        return f'{self.name}'
+        return f'{self.name} = {self.value}'
 
     def get_export_color(self) -> str:
         return _INP_OUT_COLOR
@@ -514,10 +547,7 @@ class MetricNode(DSGNode):
 
     @staticmethod
     def _value_str(value) -> str:
-        # An evaluation under uncertainty assigns the whole sampled column (a StochasticOutput) rather than a
-        # single number, so show what characterizes it instead of the value itself
-        # TODO Adjust visualization depending on the type of output distribution TBD
-        if hasattr(value, 'mean') and hasattr(value, 'std'):
+        if isinstance(value, StochasticOutput):
             mean, std = value.mean(), value.std()
             mean_str = 'NaN' if math.isnan(mean) else f'{mean:.4g}'
             std_str = 'NaN' if math.isnan(std) else f'{std:.4g}'

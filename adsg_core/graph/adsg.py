@@ -316,7 +316,7 @@ class DSG:
 
     def set_input_parameter_value(self, parameter_node: InputParameterNode, value: Union[ot.DistributionImplementation, float]):
         """
-        Set the value or distribution of a parameter node.
+        Set the value of the realization of the respective input parameter.
         """
         self._input_parameter_values[parameter_node] = value
 

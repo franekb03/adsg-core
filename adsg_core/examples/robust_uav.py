@@ -30,7 +30,7 @@ from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_basic import *
 from adsg_core.graph.adsg_nodes import *
 from adsg_core.optimization.stochastic_evaluator import StochasticDSGEvaluator
-from sb_arch_opt.uncertainty import MonteCarlo, UQMethod, RobustMeasure, Mean, Margin, PolynomialChaos
+from sb_arch_opt.uncertainty import MonteCarlo, UQMethod, Scalarization, Mean, Margin, PolynomialChaos
 from sb_arch_opt.algo.pymoo_interface import plot
 
 __all__ = ['RobustUAVEvaluator', 'UAVOptionNode', 'run_sbo']
@@ -99,7 +99,7 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
     Metrics:
 
     - `endurance` [min]: maximized, stochastic, reduced with `Margin(k=-k)`, i.e. `mean - k*std` (the sign is
-      negative because the measure is applied to the physical samples of a *maximized* quantity)
+      negative because the scalar is applied to the physical samples of a *maximized* quantity)
     - `mass` [kg]: minimized, evaluated at the mean payload so it has no scatter of its own
 
     Ensure the optional dependencies are installed: `pip install sb-arch-opt[arch_sbo]`
@@ -139,44 +139,39 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
     figure_of_merit = .72  # Rotor hover efficiency [-]
     energy_mass_ref = 8.  # Reference mass the energy fractions apply to [kg]
 
-    def __init__(self, k: float = 2., objective: int = None):
+    def __init__(self, uq_method: UQMethod, k: float = 2., objective: int = None):
         """
         :param k: margin factor; the robust endurance is `mean - k*std`
         :param objective: 0 for endurance only, 1 for mass only, None for both
         """
         self.k = k
+        self.uq_method = uq_method
 
         # Uncertain parameters: three always present, two conditional on the selected powertrain. The nodes are
         # identities only - the distributions are attached to the graph in get_dsg().
-        self.par_payload = InputParameterNode('payload')
-        self.par_headwind = InputParameterNode('headwind')
-        self.par_drag = InputParameterNode('drag_factor')
-        self.par_eta_bat = InputParameterNode('eta_bat')
-        self.par_bsfc = InputParameterNode('bsfc')
-
-        self.distributions = {
-            self.par_payload: 2.0,
-            self.par_headwind: ot.Normal(4., 2.5),
-            self.par_drag: ot.Normal(1., .08),
-            self.par_eta_bat: ot.Normal(.92, .03),
-            self.par_bsfc: ot.Normal(.42, .075),
-        }
+        self.par_payload = InputParameterNode('payload', 2.0)
+        self.par_headwind = InputParameterNode('headwind', ot.Uniform(4., 10.))
+        self.par_drag = InputParameterNode('drag_factor', ot.Normal(1., .08))
+        self.par_eta_bat = InputParameterNode('eta_bat', ot.Normal(.92, .03))
+        self.par_bsfc = InputParameterNode('bsfc', ot.Normal(.42, .075))
 
         self.metric_node_map: Dict[str, MetricNode] = {}
         self.option_nodes: Dict[str, List[UAVOptionNode]] = {}
 
-        super().__init__(self.get_dsg(objective=objective))
+        obj_scalar = [Margin(k=self.k, direction=1), Mean()]
 
-    @property
-    def obj_measure(self) -> List[RobustMeasure]:
-        """
-        The robust measure of each objective, in `self.objectives` order.
+        super().__init__(self.get_dsg(objective=objective), uq_method=uq_method, obj_scalar=obj_scalar)
 
-        Endurance is maximized
-        Mass has no scatter, so any measure gives the same number.
-        """
-        measures = {'endurance': Margin(k=self.k, direction=1), 'mass': Mean()}
-        return [measures[objective.name] for objective in self.objectives]
+    # @property
+    # def obj_scalar(self) -> List[Scalarization]:
+    #     """
+    #     The robust scalar of each objective, in `self.objectives` order.
+    #
+    #     Endurance is maximized
+    #     Mass has no scatter, so any scalar gives the same number.
+    #     """
+    #     scalars = {'endurance': Margin(k=self.k, direction=1), 'mass': Mean()}
+    #     return [Margin(k=self.k, direction=1), Mean()]
 
     def _add_choice(self, dsg: BasicDSG, decision: str, originating_node: DSGNode, values: list,
                     is_ordinal: bool = False):
@@ -249,11 +244,6 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
         ])
 
         dsg = dsg.set_start_nodes({uav})
-
-        # The graph holds the parameter distributions; derived instances inherit them and expose only the
-        # parameters their architecture actually has
-        for param_node, distribution in self.distributions.items():
-            dsg.set_input_parameter_value(param_node, distribution)
 
         return dsg
 
@@ -333,10 +323,10 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
     ### ROBUST EVALUATION ###
     #####################"""
 
-    def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode],
-                  parameters: Dict[InputParameterNode, float]) -> Dict[MetricNode, float]:
+    def _evaluate_sample(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, float]:
         """Evaluate one architecture for ONE realization of the uncertain parameters"""
         results = {}
+        parameters = dsg.input_parameter_values
         for metric_node in metric_nodes:
             if metric_node.name == 'endurance':
                 results[metric_node] = self._endurance(dsg, parameters)
@@ -363,7 +353,7 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
         }
 
 
-def run_sbo(n_infill: int = 20, init_size: int = 40, n_mc: int = 1000, k: float = 2., objective: int = None,
+def run_sbo(uq:UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2., objective: int = None,
             seed: int = None, verbose: bool = True):
     """
     Optimize the robust UAV problem with SBArchOpt's Surrogate-Based Optimization (SBO).
@@ -380,14 +370,11 @@ def run_sbo(n_infill: int = 20, init_size: int = 40, n_mc: int = 1000, k: float 
     if seed is not None:
         np.random.seed(seed)
 
-    evaluator = RobustUAVEvaluator(k=k, objective=objective)
-
-    param_space = evaluator.param_space
+    evaluator = RobustUAVEvaluator(uq, k=k, objective=objective)
 
     # One seeded draw of the uncertain parameters is reused for every design point (common random numbers), so
     # that design points are comparable to each other and the surrogate sees a smooth response
-    problem = evaluator.get_problem(uq_method=PolynomialChaos(param_space, n_evaluations=21, degree=2, seed=42, n_metamodel_samples=1000),
-                                    obj_measure=evaluator.obj_measure)
+    problem = evaluator.get_problem(n_parallel=4)
 
     problem.print_stats()
 
@@ -418,17 +405,15 @@ def run_sbo(n_infill: int = 20, init_size: int = 40, n_mc: int = 1000, k: float 
 
 
 if __name__ == '__main__':
-    evaluator = RobustUAVEvaluator(k=2, objective=None)
+    uq = PolynomialChaos(n_evaluations=100, seed=42, degree=3, n_metamodel_samples=10000)
+    evaluator = RobustUAVEvaluator(uq, k=2, objective=None)
     x = evaluator.get_random_design_vector()
     dsg, _, _ = evaluator.get_graph(x)
-    space = evaluator.param_space
-    uq = PolynomialChaos(space, n_evaluations=21, degree=2, seed=42, n_metamodel_samples=1000)
-    samples = uq.get_samples()
-    result = evaluator.evaluate(dsg, samples, uq)
-    print(result.outputs)
+    result = evaluator.evaluate(dsg)
+    print(result)
     dsg_all = evaluator.get_dsg()
     dsg_all.render()
     dsg.render()
 
 
-    run_sbo(n_infill=20, init_size=40, n_mc=1000, k=3, objective=None, seed=42, verbose=True)
+    run_sbo(uq, n_infill=20, init_size=40, k=3, objective=None, seed=42, verbose=True)

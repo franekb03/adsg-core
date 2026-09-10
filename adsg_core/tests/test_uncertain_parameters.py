@@ -511,7 +511,7 @@ def _problem(evaluator, n_evaluations=50, seed=42, **kwargs):
 
 
 def test_problem_shape_matches_the_evaluator():
-    """Regression: n_obj and the constraint measures were once passed under keywords the base class does not
+    """Regression: n_obj and the constraint scalars were once passed under keywords the base class does not
     take, so they landed in **kwargs and were silently ignored"""
     evaluator = StochasticBeamEvaluator(stress_ref=100.)
     problem = _problem(evaluator, n_evaluations=10)
@@ -539,13 +539,13 @@ def test_problem_uses_the_methods_parameter_space():
     assert problem.param_space.parameter_names == ['load', 'E_steel', 'E_alu']
 
 
-def test_problem_measures_take_effect():
-    """Regression: the constraint measure was once dropped, so everything reduced with Mean()"""
+def test_problem_scalars_take_effect():
+    """Regression: the constraint scalar was once dropped, so everything reduced with Mean()"""
     evaluator = StochasticBeamEvaluator(stress_ref=100.)
-    problem = _problem(evaluator, obj_measure=[Margin(k=2.), Mean()], constr_measure=[Quantile(q=.9)])
+    problem = _problem(evaluator, obj_scalar=[Margin(k=2.), Mean()], constr_scalar=[Quantile(q=.9)])
 
-    assert [type(m).__name__ for m in problem.obj_measure] == ['Margin', 'Mean']
-    assert [type(m).__name__ for m in problem.ieq_constr_measure] == ['Quantile']
+    assert [type(m).__name__ for m in problem.obj_scalar] == ['Margin', 'Mean']
+    assert [type(m).__name__ for m in problem.ieq_constr_scalar] == ['Quantile']
 
     out = problem.evaluate(np.array([[0, 3.]]), return_as_dictionary=True)
     result = out['stochastic'][0]
@@ -591,13 +591,13 @@ def test_problem_publishes_the_statistics():
 
 def test_problem_reported_statistics_reproduce_the_objectives():
     evaluator = StochasticBeamEvaluator()
-    problem = _problem(evaluator, obj_measure=[Margin(k=1.5), Mean()])
+    problem = _problem(evaluator, obj_scalar=[Margin(k=1.5), Mean()])
 
     out = problem.evaluate(np.array([[0, 2.]]), return_as_dictionary=True)
     result = out['stochastic'][0]
 
-    for j, measure in enumerate(problem.obj_measure):
-        assert out['F'][0, j] == pytest.approx(result.outputs[j].reduce(measure))
+    for j, scalar in enumerate(problem.obj_scalar):
+        assert out['F'][0, j] == pytest.approx(result.outputs[j].reduce(scalar))
 
 
 def test_problem_uses_common_random_numbers():
@@ -650,7 +650,7 @@ def test_uav_example_end_to_end():
 
     evaluator = RobustUAVEvaluator(k=2.)
     uq_method = MonteCarlo(evaluator.param_space, n_evaluations=25, seed=42)
-    problem = evaluator.get_problem(uq_method=uq_method, obj_measure=evaluator.obj_measure)
+    problem = evaluator.get_problem(uq_method=uq_method, obj_scalar=evaluator.obj_scalar)
 
     assert problem.n_obj == 2
     assert set(problem.param_space.parameter_names) == {'payload', 'headwind', 'drag_factor', 'eta_bat', 'bsfc'}

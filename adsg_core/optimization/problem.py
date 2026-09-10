@@ -223,7 +223,6 @@ class DSGArchOptProblem(ArchOptProblemBase):
         super().__init__(design_space, n_obj=n_objs, n_ieq_constr=n_constr)
 
         self.obj_is_max = [obj.dir.value > 0 for obj in evaluator.objectives]
-        # TODO Verify if .value is really needed
         self.con_ref = [(con.dir.value > 0, con.ref) for con in evaluator.constraints]
 
     def _arch_evaluate(self, x: np.ndarray, is_active_out: np.ndarray, f_out: np.ndarray, g_out: np.ndarray,
