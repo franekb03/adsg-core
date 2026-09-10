@@ -73,7 +73,6 @@ class DSG:
 
     def __init__(self, _graph=None, _influence_matrix=None, _status_array=None, _choice_con_map=None,
                  _des_var_values=None, _input_parameter_values=None, _metric_values=None, **_):
-        check_dependency()
         self._graph = _graph or self._get_empty_graph()
         self._choice_constraints: List[ChoiceConstraint] = _choice_con_map or []
         self._influence_matrix: Optional[InfluenceMatrix] = _influence_matrix
