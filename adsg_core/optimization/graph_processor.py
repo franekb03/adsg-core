@@ -106,9 +106,8 @@ class GraphProcessor:
     }
     _n_combs_cutoff = 1e9
 
-    def __init__(self, graph: DSGType, encoding_timeout: float = None, encoder_type: SelChoiceEncoderType = None):
-        check_dependency()
-        self._graph: DSGType = self._check_graph(graph)
+def __init__(self, graph: DSGType, encoding_timeout: float = None, encoder_type: SelChoiceEncoderType = None):
+    self._graph: DSGType = self._check_graph(graph)
         self._fixed_values: Dict[int, Union[int, float]] = {}
         self._comb_fixed_mask = None
         self._graph_cache = {}
