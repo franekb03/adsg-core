@@ -80,10 +80,9 @@ class DSGNode:
     is used for sorting choice options (if applicable).
     """
 
-    def __init__(self, obj_id=None, decision_id=None, option_id=None, src_decision_link_key=None,
-                 tgt_decision_link_key=None, perm_decision_link_key=None, obj_ref=None):
-        check_dependency()
-        self._obj_id = obj_id
+def __init__(self, obj_id=None, decision_id=None, option_id=None, src_decision_link_key=None,
+             tgt_decision_link_key=None, perm_decision_link_key=None, obj_ref=None):
+    self._obj_id = obj_id
         self._id = None
         self.update_node_id()
         self.obj_ref = copy.deepcopy(obj_ref)
