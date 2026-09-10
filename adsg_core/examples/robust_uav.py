@@ -336,14 +336,11 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
 
         return results
 
-    def evaluate_statistics(self, dsg: DSGType, uq_method: UQMethod = None) -> Dict[str, float]:
-        """Convenience helper returning the raw statistics of one architecture"""
-        if uq_method is None:
-            uq_method = MonteCarlo(self.param_space, n_evaluations=1000, seed=42)
+    def evaluate_statistics(self, dsg: DSGType) -> Dict[str, float]:
+        """Convenience helper returning the raw statistics of one architecture, using this evaluator's UQ method"""
+        objective_values, _ = self.evaluate(dsg)
 
-        result = self.evaluate(dsg, uq_method.get_samples(), uq_method)
-
-        by_name = {objective.name: output for objective, output in zip(self.objectives, result.outputs)}
+        by_name = {objective.name: output for objective, output in zip(self.objectives, objective_values)}
         endurance, mass = by_name['endurance'], by_name['mass']
         return {
             'endurance_mean': endurance.mean(),

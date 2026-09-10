@@ -146,14 +146,19 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
         self.stochastic_results = []
 
         # Process results
-        for x_i, (obj_values, con_values) in enumerate(results):
-            # Create StochasticResults with the obj, con returned by evaluate()
+        for i, (obj_values, con_values) in enumerate(results):
             self.stochastic_results.append(StochasticResults(obj_values+con_values))
+
             # Reduce the sampled responses of each design point to the values the optimizer sees
-            for f_i, output in enumerate(obj_values):
-                f_out[x_i, f_i] = output.reduce(self.obj_scalar[f_i])
-            for g_i, output in enumerate(con_values):
-                g_out[x_i, g_i] = output.reduce(self.ieq_constr_scalar[g_i])
+            obj_scalars = [output.reduce(self.obj_scalar[j]) for j, output in enumerate(obj_values)]
+            con_scalars = [output.reduce(self.ieq_constr_scalar[j]) for j, output in enumerate(con_values)]
+
+            # Correct directions of objectives to represent minimization
+            f_out[i, :] = [-val if self.obj_is_max[j] else val for j, val in enumerate(obj_scalars)]
+
+            # Correct directions and offset constraints to represent g(x) <= 0
+            g_out[i, :] = [(val-self.con_ref[j][1])*(-1 if self.con_ref[j][0] else 1)
+                             for j, val in enumerate(con_scalars)]
 
     def _print_extra_stats(self):
         self.get_discrete_rates(show=True)

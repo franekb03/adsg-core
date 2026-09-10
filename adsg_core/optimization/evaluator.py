@@ -61,10 +61,6 @@ class DSGEvaluator(GraphProcessor):
     Extends `GraphProcessor`, so all its functions are also available.
     """
 
-    def __init__(*args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-
     def get_problem(self, n_parallel=None, parallel_processes=True):
         """Get an SBArchOpt problem instance."""
         from adsg_core.optimization.problem import DSGArchOptProblem
