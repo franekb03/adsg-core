@@ -54,8 +54,8 @@ except ImportError:
     class StochasticParameterSpace:
         pass
 
-    class InputParameter:
-        pass
+class StochasticParameter:
+    pass
 
     class StochasticOutput:
         pass
