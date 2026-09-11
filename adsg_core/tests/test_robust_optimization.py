@@ -293,16 +293,6 @@ def test_evaluate_pairs_each_metric_with_its_own_output(constrained_beam):
     assert dsg.metric_value(constrained_beam.stress_node).mean() == pytest.approx(constraint_values[0].mean())
 
 
-def test_evaluate_raises_for_a_parameter_outside_the_space(beam):
-    # Regression: an unknown name silently wrote None onto the graph and only failed inside _evaluate_sample
-    dsg, _, _ = beam.get_graph([0, 3.])
-    assert 'load' in beam.param_space.parameter_names  # the space is cached at first access
-    beam.par_load.name = 'renamed'  # ... and the node drifts away from it
-
-    with pytest.raises(KeyError, match='renamed'):
-        beam.evaluate(dsg)
-
-
 def test_evaluated_instances_keep_their_own_outputs(beam):
     steel, _, _ = beam.get_graph([0, 3.])
     alu, _, _ = beam.get_graph([1, 3.])

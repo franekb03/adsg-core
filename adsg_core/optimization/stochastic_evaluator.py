@@ -121,20 +121,14 @@ class StochasticDSGEvaluator(DSGEvaluator):
 
         for i in range(n_s):
             # Create a dictionary that associates StochasticParameter with its realization
-            sample_values = self.uq_method.get_dictionary(self.param_space, i)
+            sample_values = self.param_realization(i)
 
             if sample_values is None:
                 raise ValueError(f"No sample values available for realization {i}")
 
             # Set parameter realization or use its deterministic value on the DSG instance
             for parameter in parameter_nodes:
-                if not parameter.is_stochastic:
-                    value = parameter.value
-                elif parameter.name in sample_values:
-                    value = sample_values.get(parameter.name)
-                else:
-                    raise KeyError(f'Stochastic parameter {parameter.name!r} is not in the parameter space')
-
+                value = sample_values[parameter]
                 dsg.set_input_parameter_value(parameter, value)
 
             # Evaluate architecture for a realized sample

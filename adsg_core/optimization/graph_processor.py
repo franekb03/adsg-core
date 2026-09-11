@@ -426,6 +426,19 @@ class GraphProcessor:
                 parameters.append(StochasticParameter(parameter_node.name, parameter_node.value))
         return StochasticParameterSpace(parameters)
 
+    def param_realization(self, i_realization: int) -> Dict[InputParameterNode, float]:
+        dictionary = {}
+        stochastic_realization = self.param_space.param_realization(i_realization)
+        name_list = {param.name: param for param in stochastic_realization}
+        for parameter_node in self.input_parameter_nodes:
+            value = name_list.get(parameter_node.name)
+            if value is None:
+                dictionary[parameter_node] = parameter_node.value
+            else:
+                dictionary[parameter_node] = value.sample_realization
+        return dictionary
+
+
     @cached_property
     def metric_nodes(self) -> List[MetricNode]:
         return sorted(self.graph.get_nodes_by_type(MetricNode), key=lambda n: n.name)
