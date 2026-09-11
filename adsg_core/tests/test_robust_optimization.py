@@ -223,6 +223,43 @@ def test_param_space_holds_only_stochastic_parameters(n):
     assert processor.param_space.joint_dist.getDimension() == 1
 
 
+def test_param_realization_is_keyed_by_node(n):
+    # The realization covers every input parameter node, stochastic or not: a deterministic one contributes its
+    # own value, so the evaluation always finds a number for every parameter it can reach on the graph
+    stochastic = InputParameterNode('u', ot.Normal(10., 2.))
+    deterministic = InputParameterNode('rho', 1.225)
+    processor = GraphProcessor(_dsg_with_parameters(n, [stochastic, deterministic]))
+
+    samples = MonteCarlo(5, seed=42).get_samples(processor.param_space)
+
+    seen = []
+    for i in range(5):
+        realization = processor.param_realization(i)
+
+        assert set(realization) == {stochastic, deterministic}
+        assert realization[deterministic] == 1.225
+        assert realization[stochastic] == pytest.approx(samples[i, 0])
+        assert all(isinstance(value, float) for value in realization.values())
+        seen.append(realization[stochastic])
+
+    assert len(set(seen)) == 5  # a different realization each time
+
+
+def test_param_realization_covers_branch_local_parameters(n):
+    # A parameter that only exists in one branch still has a column in the space, so every instance's nodes
+    # resolve against the same realization
+    common = InputParameterNode('common', ot.Normal(0., 1.))
+    only_a = InputParameterNode('only_a', ot.Normal(1., 1.))
+    only_b = InputParameterNode('only_b', ot.Normal(2., 1.))
+    processor = GraphProcessor(_dsg_with_branch_parameters(n, common, only_a, only_b))
+
+    MonteCarlo(5, seed=42).get_samples(processor.param_space)
+    realization = processor.param_realization(0)
+
+    assert set(realization) == {common, only_a, only_b}
+    assert all(isinstance(value, float) for value in realization.values())
+
+
 def test_evaluator_constructs(beam):
     # Regression: DSGEvaluator.__init__ was declared without self, so super() raised for every evaluator
     assert isinstance(beam, DSGEvaluator)
