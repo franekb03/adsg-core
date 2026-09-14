@@ -162,17 +162,6 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
 
         super().__init__(self.get_dsg(objective=objective), uq_method=uq_method, obj_scalar=obj_scalar)
 
-    # @property
-    # def obj_scalar(self) -> List[Scalarization]:
-    #     """
-    #     The robust scalar of each objective, in `self.objectives` order.
-    #
-    #     Endurance is maximized
-    #     Mass has no scatter, so any scalar gives the same number.
-    #     """
-    #     scalars = {'endurance': Margin(k=self.k, direction=1), 'mass': Mean()}
-    #     return [Margin(k=self.k, direction=1), Mean()]
-
     def _add_choice(self, dsg: BasicDSG, decision: str, originating_node: DSGNode, values: list,
                     is_ordinal: bool = False):
         """Add a selection choice whose options are UAVOptionNodes carrying the decision value"""
@@ -350,7 +339,7 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
         }
 
 
-def run_sbo(uq:UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2., objective: int = None,
+def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2., objective: int = None,
             seed: int = None, verbose: bool = True):
     """
     Optimize the robust UAV problem with SBArchOpt's Surrogate-Based Optimization (SBO).
@@ -371,7 +360,7 @@ def run_sbo(uq:UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.,
 
     # One seeded draw of the uncertain parameters is reused for every design point (common random numbers), so
     # that design points are comparable to each other and the surrogate sees a smooth response
-    problem = evaluator.get_problem(n_parallel=4)
+    problem = evaluator.get_problem()
 
     problem.print_stats()
 

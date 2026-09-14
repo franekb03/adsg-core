@@ -143,7 +143,7 @@ class StochasticDSGEvaluator(DSGEvaluator):
         metric_map = {}
 
         # After UQ reset the parameter node to store its distribution
-        for i, parameter_node in enumerate(parameter_nodes):
+        for parameter_node in parameter_nodes:
             dsg.set_input_parameter_value(parameter_node, parameter_node.value)
 
         # Return metric map

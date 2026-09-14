@@ -171,5 +171,4 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
         return f'{self.__class__.__name__}({self.evaluator!r})'
 
 
-ADSGDesignSpace = DSGDesignSpace  # Backward compatibility
 ADSGStochasticArchOptProblem = DSGStochasticArchOptProblem  # Backward compatibility

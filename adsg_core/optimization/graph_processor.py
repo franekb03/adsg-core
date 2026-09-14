@@ -414,7 +414,7 @@ class GraphProcessor:
     def input_parameter_nodes(self) -> List[InputParameterNode]:
         return sorted(self.graph.get_nodes_by_type(InputParameterNode), key=lambda n: n.name)
 
-    @cached_property
+    @property
     def param_space(self) -> StochasticParameterSpace:
         """
         Return a stochastic parameter space corresponding to all the parameters defined during initialization.
@@ -427,17 +427,21 @@ class GraphProcessor:
         return StochasticParameterSpace(parameters)
 
     def param_realization(self, i_realization: int) -> Dict[InputParameterNode, float]:
+        """
+        Return a dictionary of InputParameterNode with its associated sample realization.
+        """
         dictionary = {}
         stochastic_realization = self.param_space.param_realization(i_realization)
         name_list = {param.name: param for param in stochastic_realization}
         for parameter_node in self.input_parameter_nodes:
-            value = name_list.get(parameter_node.name)
-            if value is None:
+            param = name_list.get(parameter_node.name)
+            if param is None:
+                # If deterministic use fixed value stored on the node
                 dictionary[parameter_node] = parameter_node.value
             else:
-                dictionary[parameter_node] = value.sample_realization
+                # If stochastic use sample realization that was computed with UQ method
+                dictionary[parameter_node] = param.sample_realization
         return dictionary
-
 
     @cached_property
     def metric_nodes(self) -> List[MetricNode]:
