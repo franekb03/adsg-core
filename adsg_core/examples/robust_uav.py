@@ -360,7 +360,7 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
 
     # One seeded draw of the uncertain parameters is reused for every design point (common random numbers), so
     # that design points are comparable to each other and the surrogate sees a smooth response
-    problem = evaluator.get_problem()
+    problem = evaluator.get_problem(n_parallel=4)
 
     problem.print_stats()
 

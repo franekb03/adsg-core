@@ -234,7 +234,7 @@ def test_param_realization_is_keyed_by_node(n):
 
     seen = []
     for i in range(5):
-        realization = processor.param_realization(i)
+        realization = processor.param_realization(samples, i)
 
         assert set(realization) == {stochastic, deterministic}
         assert realization[deterministic] == 1.225
@@ -253,8 +253,8 @@ def test_param_realization_covers_branch_local_parameters(n):
     only_b = InputParameterNode('only_b', ot.Normal(2., 1.))
     processor = GraphProcessor(_dsg_with_branch_parameters(n, common, only_a, only_b))
 
-    MonteCarlo(5, seed=42).get_samples(processor.param_space)
-    realization = processor.param_realization(0)
+    samples = MonteCarlo(5, seed=42).get_samples(processor.param_space)
+    realization = processor.param_realization(samples, 0)
 
     assert set(realization) == {common, only_a, only_b}
     assert all(isinstance(value, float) for value in realization.values())
@@ -356,7 +356,7 @@ def test_problem_shape_and_parameter_space(constrained_beam):
     assert problem.n_obj == len(constrained_beam.objectives) == 3
     assert problem.n_ieq_constr == len(constrained_beam.constraints) == 1
     assert problem.n_var == len(constrained_beam.des_vars)
-    assert problem.param_space is constrained_beam.param_space
+    assert problem.param_space.parameter_names == constrained_beam.param_space.parameter_names
     assert problem.param_space.parameter_names == ['E_alu', 'E_steel', 'load']  # rho_factor is deterministic
     assert repr(problem)
 

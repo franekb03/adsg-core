@@ -414,7 +414,7 @@ class GraphProcessor:
     def input_parameter_nodes(self) -> List[InputParameterNode]:
         return sorted(self.graph.get_nodes_by_type(InputParameterNode), key=lambda n: n.name)
 
-    @property
+    @cached_property
     def param_space(self) -> StochasticParameterSpace:
         """
         Return a stochastic parameter space corresponding to all the parameters defined during initialization.
@@ -426,12 +426,12 @@ class GraphProcessor:
                 parameters.append(StochasticParameter(parameter_node.name, parameter_node.value))
         return StochasticParameterSpace(parameters)
 
-    def param_realization(self, i_realization: int) -> Dict[InputParameterNode, float]:
+    def param_realization(self, samples: np.ndarray, i_realization: int) -> Dict[InputParameterNode, float]:
         """
         Return a dictionary of InputParameterNode with its associated sample realization.
         """
         dictionary = {}
-        stochastic_realization = self.param_space.param_realization(i_realization)
+        stochastic_realization = self.param_space.param_realization(samples, i_realization)
         name_list = {param.name: param for param in stochastic_realization}
         for parameter_node in self.input_parameter_nodes:
             param = name_list.get(parameter_node.name)

@@ -121,7 +121,7 @@ class StochasticDSGEvaluator(DSGEvaluator):
 
         for i in range(n_s):
             # Create a dictionary that associates StochasticParameter with its realization
-            sample_values = self.param_realization(i)
+            sample_values = self.param_realization(stochastic_samples, i)
 
             if sample_values is None:
                 raise ValueError(f"No sample values available for realization {i}")
