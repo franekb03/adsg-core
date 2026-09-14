@@ -540,19 +540,9 @@ class MetricNode(DSGNode):
                 role_str = ' [↑]' if self.dir > 0 else ' [↓]'
 
         if self.assigned_value is not None:
-            role_str = f' = {self._value_str(self.assigned_value)}'+role_str
+            role_str = f' = {self.assigned_value}'+role_str
 
         return self.name+role_str
-
-    @staticmethod
-    def _value_str(value) -> str:
-        if isinstance(value, StochasticOutput):
-            mean, std = value.mean(), value.std()
-            mean_str = 'NaN' if math.isnan(mean) else f'{mean:.4g}'
-            std_str = 'NaN' if math.isnan(std) else f'{std:.4g}'
-            return f'μ={mean_str}, σ={std_str}'
-
-        return 'NaN' if math.isnan(value) else f'{value:.4g}'
 
     def get_export_color(self) -> str:
         return _INP_OUT_COLOR
