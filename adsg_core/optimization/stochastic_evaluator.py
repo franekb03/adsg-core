@@ -71,9 +71,9 @@ def check_dependency():
 class StochasticDSGEvaluator(DSGEvaluator):
     """
     Base class for implementing an evaluator for stochastic problem that directly evaluates DSG instances.
-    Override _evaluate to implement the evaluation.
+    Override _evaluate_sample to implement the evaluation.
 
-    Extends `GraphProcessor`, so all its functions are also available.
+    Inherits `DSGEvaluator` and 'GraphProcessor', so all their functions are also available.
     """
 
     def __init__(self,
@@ -120,7 +120,7 @@ class StochasticDSGEvaluator(DSGEvaluator):
         g_s = np.zeros((n_s, n_constr)) * np.nan
 
         for i in range(n_s):
-            # Create a dictionary that associates StochasticParameter with its realization
+            # Create a dictionary that associates parameters with its realization
             sample_values = self.param_realization(stochastic_samples, i)
 
             if sample_values is None:

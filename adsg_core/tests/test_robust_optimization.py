@@ -301,12 +301,12 @@ def test_evaluate_stores_a_stochastic_output_per_metric(beam):
         assert len(value.to_numpy()) == 20
 
     # Values are physical: no sign conventions are applied by the evaluator
-    assert dsg.metric_value(beam.mass_node).mean() == pytest.approx(7.8*3.*1.5)
+    assert dsg.metric_value(beam.mass_node).mean == pytest.approx(7.8*3.*1.5)
     assert np.all(dsg.metric_value(beam.deflection_node).to_numpy() > 0.)
 
     # The deflection scatters with the load, the mass does not
-    assert dsg.metric_value(beam.deflection_node).std() > 0.
-    assert dsg.metric_value(beam.mass_node).std() == pytest.approx(0.)
+    assert dsg.metric_value(beam.deflection_node).std > 0.
+    assert dsg.metric_value(beam.mass_node).std == pytest.approx(0.)
 
 
 def test_evaluate_pairs_each_metric_with_its_own_output(constrained_beam):
@@ -319,15 +319,15 @@ def test_evaluate_pairs_each_metric_with_its_own_output(constrained_beam):
     by_name = {objective.name: value for objective, value in zip(constrained_beam.objectives, objective_values)}
 
     e_steel, load, thickness = 210., 100., 3.
-    assert by_name['mass'].mean() == pytest.approx(7.8*thickness*1.5)
-    assert by_name['capacity'].mean() == pytest.approx(e_steel*thickness**2 / load, rel=.1)
-    assert by_name['deflection'].mean() == pytest.approx(load / (e_steel*thickness**3), rel=.1)
-    assert constraint_values[0].mean() == pytest.approx(load / thickness**2, rel=.1)
+    assert by_name['mass'].mean == pytest.approx(7.8*thickness*1.5)
+    assert by_name['capacity'].mean == pytest.approx(e_steel*thickness**2 / load, rel=.1)
+    assert by_name['deflection'].mean == pytest.approx(load / (e_steel*thickness**3), rel=.1)
+    assert constraint_values[0].mean == pytest.approx(load / thickness**2, rel=.1)
 
     for node, name in [(constrained_beam.mass_node, 'mass'), (constrained_beam.capacity_node, 'capacity'),
                        (constrained_beam.deflection_node, 'deflection')]:
-        assert dsg.metric_value(node).mean() == pytest.approx(by_name[name].mean())
-    assert dsg.metric_value(constrained_beam.stress_node).mean() == pytest.approx(constraint_values[0].mean())
+        assert dsg.metric_value(node).mean == pytest.approx(by_name[name].mean)
+    assert dsg.metric_value(constrained_beam.stress_node).mean == pytest.approx(constraint_values[0].mean)
 
 
 def test_evaluated_instances_keep_their_own_outputs(beam):
@@ -336,7 +336,7 @@ def test_evaluated_instances_keep_their_own_outputs(beam):
     beam.evaluate(steel)
     beam.evaluate(alu)
 
-    means = [dsg.metric_value(beam.deflection_node).mean() for dsg in (steel, alu)]
+    means = [dsg.metric_value(beam.deflection_node).mean for dsg in (steel, alu)]
     assert means[0] != means[1]
     assert means[0] < means[1]  # steel is stiffer, so it deflects less
 
@@ -347,7 +347,7 @@ def test_export_handles_stochastic_outputs(beam):
     dsg._get_graph_for_export()
 
     title = beam.deflection_node.get_export_title()
-    assert 'μ=' in title and 'σ=' in title
+    assert 'mean =' in title and 'sigma =' in title
 
 
 def test_problem_shape_and_parameter_space(constrained_beam):
@@ -373,7 +373,7 @@ def test_problem_applies_the_optimizer_conventions(constrained_beam):
 
     # capacity is maximized, so it is stored negated; mass is minimized and stored as-is
     assert out['F'][0, i_capacity] < 0.
-    assert result.outputs[i_capacity].mean() > 0.
+    assert result.outputs[i_capacity].mean > 0.
     assert out['F'][0, i_capacity] == pytest.approx(-result.outputs[i_capacity].reduce(Mean()))
     assert out['F'][0, i_mass] == pytest.approx(7.8*3.*1.5)
 
@@ -397,7 +397,7 @@ def test_problem_evaluation_and_statistics(beam):
     # Realizations really reach the model
     deflection = out['stochastic'][0].outputs[1]
     assert len(set(deflection.to_numpy().tolist())) == 20
-    assert deflection.std() > 0.
+    assert deflection.std > 0.
 
 
 def test_problem_scalars_take_effect():
@@ -410,7 +410,7 @@ def test_problem_scalars_take_effect():
 
     # objectives are ordered by name: capacity, deflection, mass
     assert out['F'][0, 1] == pytest.approx(result.outputs[1].reduce(Margin(k=2.)))
-    assert out['F'][0, 1] > result.outputs[1].mean()
+    assert out['F'][0, 1] > result.outputs[1].mean
     assert out['G'][0, 0] == pytest.approx(result.outputs[3].reduce(Quantile(q=.9)) - 60.)
 
 
@@ -464,8 +464,8 @@ def test_uav_example():
     # endurance is maximized, so it is stored negated while the graph keeps the physical value
     assert np.all(out['F'][:, 0] < 0.)
     endurance = out['stochastic'][0].outputs[0]
-    assert endurance.mean() > 0.
-    assert endurance.std() > 0.
+    assert endurance.mean > 0.
+    assert endurance.std > 0.
 
 
 def test_uav_example_statistics_helper():

@@ -332,10 +332,10 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
         by_name = {objective.name: output for objective, output in zip(self.objectives, objective_values)}
         endurance, mass = by_name['endurance'], by_name['mass']
         return {
-            'endurance_mean': endurance.mean(),
-            'endurance_std': endurance.std(),
-            'endurance_robust': endurance.mean() - self.k*endurance.std(),
-            'mass': mass.mean(),
+            'endurance_mean': endurance.mean,
+            'endurance_std': endurance.std,
+            'endurance_robust': endurance.mean - self.k*endurance.std,
+            'mass': mass.mean,
         }
 
 

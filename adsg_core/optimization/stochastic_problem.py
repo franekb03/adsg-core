@@ -48,8 +48,7 @@ except ImportError:
     class StochasticArchOptProblem:
         pass
 
-__all__ = ['check_dependency', 'DSGStochasticArchOptProblem', 'HAS_SB_ARCH_OPT',
-           'ADSGDesignSpace', 'ADSGStochasticArchOptProblem']
+__all__ = ['check_dependency', 'DSGStochasticArchOptProblem', 'HAS_SB_ARCH_OPT', 'ADSGStochasticArchOptProblem']
 
 log = logging.getLogger('adsg.opt')
 

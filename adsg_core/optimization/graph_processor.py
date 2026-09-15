@@ -440,7 +440,7 @@ class GraphProcessor:
                 dictionary[parameter_node] = parameter_node.value
             else:
                 # If stochastic use sample realization that was computed with UQ method
-                dictionary[parameter_node] = param.sample_realization
+                dictionary[parameter_node] = param.sample
         return dictionary
 
     @cached_property
