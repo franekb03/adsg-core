@@ -423,7 +423,7 @@ class GraphProcessor:
         parameters = []
         for parameter_node in self.input_parameter_nodes:
             if parameter_node.is_stochastic:
-                parameters.append(StochasticParameter(parameter_node.name, parameter_node.value))
+                parameters.append(StochasticParameter(parameter_node.name, parameter_node.value, ref=parameter_node))
         return StochasticParameterSpace(parameters)
 
     def param_realization(self, samples: np.ndarray, i_realization: int) -> Dict[InputParameterNode, float]:
@@ -432,9 +432,9 @@ class GraphProcessor:
         """
         dictionary = {}
         stochastic_realization = self.param_space.param_realization(samples, i_realization)
-        name_list = {param.name: param for param in stochastic_realization}
+        name_list = {param.ref: param for param in stochastic_realization}
         for parameter_node in self.input_parameter_nodes:
-            param = name_list.get(parameter_node.name)
+            param = name_list.get(parameter_node)
             if param is None:
                 # If deterministic use fixed value stored on the node
                 dictionary[parameter_node] = parameter_node.value

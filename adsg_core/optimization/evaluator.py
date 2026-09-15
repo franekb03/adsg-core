@@ -51,6 +51,7 @@ __all__ = ['DSGEvaluator', 'ADSGEvaluator', 'check_dependency', 'HAS_SB_ARCH_OPT
 log = logging.getLogger('adsg.opt')
 
 
+EvaluationOutput = Union[StochasticOutput, float]
 
 
 class DSGEvaluator(GraphProcessor):
@@ -70,7 +71,7 @@ class DSGEvaluator(GraphProcessor):
         raise RuntimeError(f'Metric {objective.name} can either be an objective or a constraint! '
                            f'Specify the metric type using node.type = MetricType.x')
 
-    def evaluate(self, dsg: DSGType) -> Tuple[List[Union[StochasticOutput, float]], List[Union[StochasticOutput, float]]]:
+    def evaluate(self, dsg: DSGType) -> Tuple[List[EvaluationOutput], List[EvaluationOutput]]:
         """
         Evaluate a DSG instance. Returns a list of objective values and a list of constraint values.
         """

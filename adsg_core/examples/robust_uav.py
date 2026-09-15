@@ -30,7 +30,7 @@ from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_basic import *
 from adsg_core.graph.adsg_nodes import *
 from adsg_core.optimization.stochastic_evaluator import StochasticDSGEvaluator
-from sb_arch_opt.uncertainty import MonteCarlo, UQMethod, Scalarization, Mean, Margin, PolynomialChaos
+from sb_arch_opt.uncertainty import MonteCarlo, UQMethod, Scalarization, Mean, Margin, PolynomialChaos, StochasticOutput
 from sb_arch_opt.algo.pymoo_interface import plot
 
 __all__ = ['RobustUAVEvaluator', 'UAVOptionNode', 'run_sbo']
