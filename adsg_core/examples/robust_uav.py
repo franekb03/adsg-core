@@ -391,7 +391,7 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
 
 
 if __name__ == '__main__':
-    uq = MonteCarlo(n_evaluations=100, seed=42)
+    uq = PolynomialChaos(n_evaluations=100, degree=3, seed=42, n_metamodel_samples=10000)
     # evaluator = RobustUAVEvaluator(uq, k=2, objective=None)
     # x = evaluator.get_random_design_vector()
     # dsg, _, _ = evaluator.get_graph(x)

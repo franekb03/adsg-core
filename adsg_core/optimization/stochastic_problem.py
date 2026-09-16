@@ -147,14 +147,14 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
 
             for j, obj_output in enumerate(obj_outputs):
                 obj_scalar = self.obj_scalar[j]
-                val = obj_output.scalarize(obj_scalar) if not isinstance(obj_output, float) else obj_output
+                val = obj_scalar.scalarize(obj_output) if not isinstance(obj_output, float) else obj_output
 
                 f_stoch_out[i, j] = obj_output
                 f_out[i, j] = -val if self.obj_is_max[j] else val
 
             for j, con_output in enumerate(con_outputs):
-                con_scalar = self.eq_constr_scalar[j]
-                val = con_output.scalarize(con_scalar) if not isinstance(con_output, float) else con_output
+                con_scalar = self.ieq_constr_scalar[j]
+                val = con_scalar.scalarize(con_output) if not isinstance(con_output, float) else con_output
 
                 g_stoch_out[i, j] = con_output
                 g_out[i, j] = (val-self.con_ref[j][1])*(-1 if self.con_ref[j][0] else 1)
