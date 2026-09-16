@@ -149,10 +149,10 @@ class StochasticDSGEvaluator(DSGEvaluator):
         # Return metric map
         for i, objective in enumerate(self.objectives):
             if objective.node in metric_nodes:
-                metric_map[objective.node] = result.outputs[i]
+                metric_map[objective.node] = result[i]
         for i, constraint in enumerate(self.constraints):
             if constraint.node in metric_nodes:
-                metric_map[constraint.node] = result.outputs[n_obj+i]
+                metric_map[constraint.node] = result[n_obj+i]
 
         return metric_map
 

@@ -112,8 +112,8 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
         self.con_ref = [(con.dir.value > 0, con.ref) for con in evaluator.constraints]
 
 
-    def _arch_evaluate(self, x: np.ndarray, is_active_out: np.ndarray, f_out: np.ndarray, g_out: np.ndarray,
-                       h_out: np.ndarray, *args, **kwargs):
+    def _arch_evaluate(self, x: np.ndarray, is_active_out: np.ndarray, f_out: np.ndarray, g_out: np.ndarray, h_out: np.ndarray, *args,
+                       f_stoch_out: np.ndarray=None, g_stoch_out: np.ndarray=None, h_stoch_out: np.ndarray=None, **kwargs):
         """
         Overrides parent _arch_evaluate class to integrate it with StochasticDSGEvaluator, but maintains the same functionality.
         """
@@ -142,22 +142,22 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
         else:
             results = [self.evaluator.evaluate(dsg) for dsg in dsg_instances]
 
-        self.stochastic_results = []
-
         # Process results
-        for i, (obj_values, con_values) in enumerate(results):
-            self.stochastic_results.append(StochasticResults(obj_values+con_values))
+        for i, (obj_outputs, con_outputs) in enumerate(results):
 
-            # Reduce the sampled responses of each design point to the values the optimizer sees
-            obj_scalars = [output.reduce(self.obj_scalar[j]) for j, output in enumerate(obj_values)]
-            con_scalars = [output.reduce(self.ieq_constr_scalar[j]) for j, output in enumerate(con_values)]
+            for j, obj_output in enumerate(obj_outputs):
+                obj_scalar = self.obj_scalar[j]
+                val = obj_output.scalarize(obj_scalar)
 
-            # Correct directions of objectives to represent minimization
-            f_out[i, :] = [-val if self.obj_is_max[j] else val for j, val in enumerate(obj_scalars)]
+                f_stoch_out[i, j] = obj_output
+                f_out[i, j] = -val if self.obj_is_max[j] else val
 
-            # Correct directions and offset constraints to represent g(x) <= 0
-            g_out[i, :] = [(val-self.con_ref[j][1])*(-1 if self.con_ref[j][0] else 1)
-                             for j, val in enumerate(con_scalars)]
+            for j, con_output in enumerate(con_outputs):
+                con_scalar = self.obj_scalar[j]
+                val = con_output.scalarize(con_scalar)
+
+                g_stoch_out[i, j] = con_output
+                g_out[i, j] = (val-self.con_ref[j][1])*(-1 if self.con_ref[j][0] else 1)
 
     def _print_extra_stats(self):
         self.get_discrete_rates(show=True)

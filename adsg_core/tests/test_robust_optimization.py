@@ -374,11 +374,11 @@ def test_problem_applies_the_optimizer_conventions(constrained_beam):
     # capacity is maximized, so it is stored negated; mass is minimized and stored as-is
     assert out['F'][0, i_capacity] < 0.
     assert result.outputs[i_capacity].mean > 0.
-    assert out['F'][0, i_capacity] == pytest.approx(-result.outputs[i_capacity].reduce(Mean()))
+    assert out['F'][0, i_capacity] == pytest.approx(-result.outputs[i_capacity].scalarize(Mean()))
     assert out['F'][0, i_mass] == pytest.approx(7.8*3.*1.5)
 
     # the constraint is 'stress <= 60', so g = stress - 60
-    assert out['G'][0, 0] == pytest.approx(result.outputs[3].reduce(Mean()) - 60.)
+    assert out['G'][0, 0] == pytest.approx(result.outputs[3].scalarize(Mean()) - 60.)
 
 
 def test_problem_evaluation_and_statistics(beam):
@@ -409,9 +409,9 @@ def test_problem_scalars_take_effect():
     result = out['stochastic'][0]
 
     # objectives are ordered by name: capacity, deflection, mass
-    assert out['F'][0, 1] == pytest.approx(result.outputs[1].reduce(Margin(k=2.)))
+    assert out['F'][0, 1] == pytest.approx(result.outputs[1].scalarize(Margin(k=2.)))
     assert out['F'][0, 1] > result.outputs[1].mean
-    assert out['G'][0, 0] == pytest.approx(result.outputs[3].reduce(Quantile(q=.9)) - 60.)
+    assert out['G'][0, 0] == pytest.approx(result.outputs[3].scalarize(Quantile(q=.9)) - 60.)
 
 
 def test_problem_uses_common_random_numbers_and_one_graph_per_point(beam):
