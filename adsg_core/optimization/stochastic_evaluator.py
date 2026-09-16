@@ -63,6 +63,7 @@ except ImportError:
 
 log = logging.getLogger('adsg.opt')
 
+EvaluationOutput = Union[StochasticOutput, float]
 
 def check_dependency():
     if not HAS_SB_ARCH_OPT:
@@ -101,7 +102,7 @@ class StochasticDSGEvaluator(DSGEvaluator):
                                            n_parallel=n_parallel, parallel_processes=parallel_processes)
 
 
-    def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, StochasticOutput]:
+    def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, EvaluationOutput]:
         """
         Implement this function to provide stochastic DSG evaluation .
         Override this function if external UQ tool is linked.
@@ -138,7 +139,7 @@ class StochasticDSGEvaluator(DSGEvaluator):
             g_s[i, :] = [value_map.get(constraint.node, math.nan) if constraint.node in metric_nodes else constraint.ref for constraint in self.constraints]
 
         # Apply UQ method to process the results and return StochasticResult for this DSG instance
-        result = self.uq_method.process_results(np.concatenate([f_s, g_s], axis=1), param_space = self.param_space)
+        outputs = self.uq_method.process_results(np.concatenate([f_s, g_s], axis=1), param_space = self.param_space)
 
         metric_map = {}
 
@@ -149,10 +150,10 @@ class StochasticDSGEvaluator(DSGEvaluator):
         # Return metric map
         for i, objective in enumerate(self.objectives):
             if objective.node in metric_nodes:
-                metric_map[objective.node] = result[i]
+                metric_map[objective.node] = outputs[i]
         for i, constraint in enumerate(self.constraints):
-            if constraint.node in metric_nodes:
-                metric_map[constraint.node] = result[n_obj+i]
+            if constraint.node in metric_nodes and outputs[n_obj+i] is not None:
+                metric_map[constraint.node] = outputs[n_obj+i]
 
         return metric_map
 

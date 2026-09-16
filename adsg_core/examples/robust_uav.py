@@ -360,7 +360,7 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
 
     # One seeded draw of the uncertain parameters is reused for every design point (common random numbers), so
     # that design points are comparable to each other and the surrogate sees a smooth response
-    problem = evaluator.get_problem(n_parallel=2)
+    problem = evaluator.get_problem(n_parallel=4)
 
     problem.print_stats()
 
@@ -391,7 +391,7 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
 
 
 if __name__ == '__main__':
-    uq = PolynomialChaos(n_evaluations=100, seed=42, degree=3, n_metamodel_samples=10000)
+    uq = MonteCarlo(n_evaluations=100, seed=42)
     # evaluator = RobustUAVEvaluator(uq, k=2, objective=None)
     # x = evaluator.get_random_design_vector()
     # dsg, _, _ = evaluator.get_graph(x)
