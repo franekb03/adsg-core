@@ -28,6 +28,7 @@ import copy
 import enum
 import itertools
 import warnings
+from dataclasses import dataclass
 
 import numpy as np
 import openturns as ot
@@ -53,7 +54,7 @@ except ImportError:
 
 __all__ = ['check_dependency', 'DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
            'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'InputParameterNode', 'MetricNode', 'MetricType', 'EdgeType', 'EdgeTuple',
-           'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode', 'HAS_SB_ARCH_OPT']
+           'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode', 'HAS_SB_ARCH_OPT', 'NormalDistribution', 'UniformDistribution']
 
 log = logging.getLogger('adsg.opt')
 
@@ -464,26 +465,35 @@ class DesignVariableNode(DSGNode):
     def __str__(self):
         return f'DV[{self.name}]'
 
+@dataclass
+class NormalDistribution:
+    mean: float
+    var: float
+
+@dataclass
+class UniformDistribution:
+    lowerBound: float
+    upperBound: float
 
 class InputParameterNode(DSGNode):
     """
     Node representing input parameter that can be either deterministic or stochastic.
     """
 
-    def __init__(self, name, value: Union[ot.DistributionImplementation, float], idx=None):
+    def __init__(self, name, value, idx=None, **kwargs):
 
         self.name = name
         self.idx = idx
         self.value = value
         self.assigned_value = None      # Only for export
-        super(InputParameterNode, self).__init__()
+        super(InputParameterNode, self).__init__(**kwargs)
 
     @property
     def is_stochastic(self) -> bool:
-        if isinstance(self.value, ot.DistributionImplementation):
-            return True
-        else:
+        if isinstance(self.value, float):
             return False
+        else:
+            return True
 
     def get_export_title(self) -> str:
         if self.assigned_value is not None:
@@ -494,10 +504,10 @@ class InputParameterNode(DSGNode):
         return _INP_OUT_COLOR
 
     def str_context(self):
-        return f'PARAM.{self.name}'
+        return 'INP[%s]' % self.name
 
     def __str__(self):
-        return f'PARAM[{self.name}]'
+        return 'INP[%s]' % self.name
 
 class MetricType(enum.Flag):
     NONE = 0

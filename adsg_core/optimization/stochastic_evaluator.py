@@ -29,7 +29,7 @@ import warnings
 
 import numpy as np
 
-from adsg_core import DSGType, DSGEvaluator
+from adsg_core import DSGType, DSGEvaluator, InputParameterNode
 from adsg_core.graph.adsg_nodes import MetricNode
 from adsg_core.optimization.graph_processor import *
 
@@ -101,6 +101,21 @@ class StochasticDSGEvaluator(DSGEvaluator):
                                            self.constr_scalar,
                                            n_parallel=n_parallel, parallel_processes=parallel_processes)
 
+    def _param_realization(self, param_nodes: List[InputParameterNode], param_space: StochasticParameterSpace, samples: np.ndarray, i_realization: int) -> Dict[InputParameterNode, float]:
+        dictionary = {}
+        stochastic_realization = param_space.param_realization(samples, i_realization)
+        name_list = {param.ref: param for param in stochastic_realization}
+        for param in self.inp_params:
+            if param.node in param_nodes:
+                stoch_param = name_list.get(param.node)
+                if stoch_param is None:
+                    # If deterministic use fixed value stored on the node
+                    dictionary[param.node] = param.node.value
+                else:
+                    # If stochastic use sample realization that was computed with UQ method
+                    dictionary[param.node] = stoch_param.sample
+
+        return dictionary
 
     def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, EvaluationOutput]:
         """
@@ -111,7 +126,7 @@ class StochasticDSGEvaluator(DSGEvaluator):
         """
         # Sample the stochastic parameters
         stochastic_samples = self.uq_method.get_samples(self.param_space)
-        parameter_nodes = dsg.input_parameter_nodes
+        param_nodes = dsg.inp_param_nodes
 
         n_s = stochastic_samples.shape[0]
         n_obj = len(self.objectives)
@@ -122,15 +137,15 @@ class StochasticDSGEvaluator(DSGEvaluator):
 
         for i in range(n_s):
             # Create a dictionary that associates parameters with its realization
-            sample_values = self.param_realization(stochastic_samples, i)
+            sample_values = self._param_realization(param_nodes, self.param_space, stochastic_samples, i)
 
             if sample_values is None:
                 raise ValueError(f"No sample values available for realization {i}")
 
             # Set parameter realization or use its deterministic value on the DSG instance
-            for parameter in parameter_nodes:
+            for parameter in param_nodes:
                 value = sample_values[parameter]
-                dsg.set_input_parameter_value(parameter, value)
+                dsg.set_inp_param_value(parameter, value)
 
             # Evaluate architecture for a realized sample
             value_map = self._evaluate_sample(dsg, metric_nodes)
@@ -144,8 +159,8 @@ class StochasticDSGEvaluator(DSGEvaluator):
         metric_map = {}
 
         # After UQ reset the parameter node to store its distribution
-        for parameter_node in parameter_nodes:
-            dsg.set_input_parameter_value(parameter_node, parameter_node.value)
+        for parameter_node in param_nodes:
+            dsg.set_inp_param_value(parameter_node, parameter_node.value)
 
         # Return metric map
         for i, objective in enumerate(self.objectives):

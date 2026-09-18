@@ -222,6 +222,10 @@ class GraphProcessor:
         return self._fixed_values.copy()
 
     @cached_property
+    def inp_params(self):
+        return self._get_inp_params()
+
+    @cached_property
     def objectives(self) -> List[Objective]:
         """The optimization problem objectives"""
         return self._categorized_metrics[0]
@@ -411,7 +415,7 @@ class GraphProcessor:
         return self.graph.ordered_choice_nodes(self.graph.des_var_nodes)
 
     @cached_property
-    def input_parameter_nodes(self) -> List[InputParameterNode]:
+    def inp_param_nodes(self) -> List[InputParameterNode]:
         return sorted(self.graph.get_nodes_by_type(InputParameterNode), key=lambda n: n.name)
 
     @cached_property
@@ -421,19 +425,27 @@ class GraphProcessor:
         Handles both stochastic and deterministic parameters.
         """
         parameters = []
-        for parameter_node in self.input_parameter_nodes:
+        for parameter_node in self.inp_param_nodes:
             if parameter_node.is_stochastic:
-                parameters.append(StochasticParameter(parameter_node.name, parameter_node.value, ref=parameter_node))
+                dist_type = parameter_node.value
+                if isinstance(dist_type, NormalDistribution):
+                    dist = ot.Normal(dist_type.mean, dist_type.var)
+                elif isinstance(dist_type, UniformDistribution):
+                    dist = ot.Uniform(dist_type.lowerBound, dist_type.upperBound)
+                else:
+                    raise ValueError('Unsupported distribution type: %r' % dist_type)
+
+                parameters.append(StochasticParameter(parameter_node.name, dist, ref=parameter_node))
+
         return StochasticParameterSpace(parameters)
 
     def param_realization(self, samples: np.ndarray, i_realization: int) -> Dict[InputParameterNode, float]:
         """
         Return a dictionary of InputParameterNode with its associated sample realization.
-        """
         dictionary = {}
         stochastic_realization = self.param_space.param_realization(samples, i_realization)
         name_list = {param.ref: param for param in stochastic_realization}
-        for parameter_node in self.input_parameter_nodes:
+        for parameter_node in self.inp_param_nodes:
             param = name_list.get(parameter_node)
             if param is None:
                 # If deterministic use fixed value stored on the node
@@ -480,6 +492,14 @@ class GraphProcessor:
     def _can_be_constraint(metric_node):
         """A metric can be a constraint if a reference value has been defined."""
         return metric_node.dir is not None and metric_node.ref is not None
+
+    def _get_inp_params(self) -> List[InpParam]:
+        inp_params = []
+        for inp_param_node in self.inp_param_nodes:
+            inp_param = InpParam.from_inp_param_node(inp_param_node)
+            inp_params.append(inp_param)
+
+        return inp_params
 
     def _categorize_metrics(self):
         objectives = []

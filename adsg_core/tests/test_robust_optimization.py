@@ -9,7 +9,7 @@ from adsg_core.graph.adsg_nodes import *
 from adsg_core.optimization.evaluator import *
 from adsg_core.optimization.stochastic_evaluator import *
 from adsg_core.optimization.graph_processor import *
-from sb_arch_opt.uncertainty import (MonteCarlo, PolynomialChaos, StochasticOutput, StochasticResults,
+from sb_arch_opt.uncertainty import (MonteCarlo, PolynomialChaos, StochasticOutput,
                                      Mean, Margin, Quantile)
 
 
@@ -90,9 +90,9 @@ class BeamEvaluator(StochasticDSGEvaluator):
     def _evaluate_sample(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, float]:
         material = self._material(dsg)
         thickness = self._thickness(dsg)
-        load = dsg.input_parameter_value(self.par_load)
-        e_modulus = dsg.input_parameter_value(self.par_e[material])
-        rho_factor = dsg.input_parameter_value(self.par_rho)
+        load = dsg.inp_param_value(self.par_load)
+        e_modulus = dsg.inp_param_value(self.par_e[material])
+        rho_factor = dsg.inp_param_value(self.par_rho)
         self.seen_loads.append(load)
 
         values = {
@@ -142,21 +142,21 @@ def test_set_get_input_parameter_value(n):
     dsg = _dsg_with_parameters(n, [par_a, par_b])
 
     assert dsg.feasible
-    assert set(dsg.input_parameter_nodes) == {par_a, par_b}
-    assert dsg.input_parameter_value(par_a) is None  # nothing assigned on the graph yet
+    assert set(dsg.inp_param_nodes) == {par_a, par_b}
+    assert dsg.inp_param_value(par_a) is None  # nothing assigned on the graph yet
 
     dist = ot.Normal(5., 1.)
-    dsg.set_input_parameter_value(par_a, dist)
-    assert dsg.input_parameter_value(par_a) is dist
+    dsg.set_inp_param_value(par_a, dist)
+    assert dsg.inp_param_value(par_a) is dist
 
-    values = dsg.input_parameter_values
+    values = dsg.inp_param_values
     values[par_a] = 99.
-    assert dsg.input_parameter_value(par_a) is dist  # the mapping is a copy
+    assert dsg.inp_param_value(par_a) is dist  # the mapping is a copy
 
-    assert dsg.copy().input_parameter_value(par_a) is dist  # and survives derivation
+    assert dsg.copy().inp_param_value(par_a) is dist  # and survives derivation
 
-    dsg.reset_input_parameter_values()
-    assert dsg.input_parameter_values == {}
+    dsg.reset_inp_param_values()
+    assert dsg.inp_param_values == {}
 
 
 def test_parameter_node_conditional_existence(n):
@@ -171,7 +171,7 @@ def test_parameter_node_conditional_existence(n):
     seen = set()
     for opt_idx in range(2):
         graph, _, _ = processor.get_graph([opt_idx])
-        par_nodes = set(graph.input_parameter_nodes)
+        par_nodes = set(graph.inp_param_nodes)
 
         assert common in par_nodes
         assert len(par_nodes) == 2
@@ -190,12 +190,12 @@ def test_parameter_values_isolated_between_instances(n):
 
     graph_a, _, _ = processor.get_graph([0])
     graph_b, _, _ = processor.get_graph([1])
-    graph_a.set_input_parameter_value(par_a, 1.)
-    graph_b.set_input_parameter_value(par_a, 2.)
+    graph_a.set_inp_param_value(par_a, 1.)
+    graph_b.set_inp_param_value(par_a, 2.)
 
-    assert graph_a.input_parameter_value(par_a) == 1.
-    assert graph_b.input_parameter_value(par_a) == 2.
-    assert processor.graph.input_parameter_value(par_a) is None  # template untouched
+    assert graph_a.inp_param_value(par_a) == 1.
+    assert graph_b.inp_param_value(par_a) == 2.
+    assert processor.graph.inp_param_value(par_a) is None  # template untouched
 
 
 def test_parameters_are_not_design_variables(n):
@@ -217,7 +217,7 @@ def test_param_space_holds_only_stochastic_parameters(n):
     deterministic = InputParameterNode('rho', 1.225)
     processor = GraphProcessor(_dsg_with_parameters(n, [stochastic, deterministic]))
 
-    assert [node.name for node in processor.input_parameter_nodes] == ['rho', 'u']  # sorted by name
+    assert [node.name for node in processor.inp_param_nodes] == ['rho', 'u']  # sorted by name
     assert processor.param_space.parameter_names == ['u']
     assert processor.param_space.n_parameters == 1
     assert processor.param_space.joint_dist.getDimension() == 1
@@ -284,9 +284,9 @@ def test_evaluate_restores_parameter_values(beam):
     beam.evaluate(dsg)
 
     # The loop writes realizations onto the instance; afterwards the nodes carry their own value again
-    for node in dsg.input_parameter_nodes:
-        assert dsg.input_parameter_value(node) is node.value
-    assert dsg.input_parameter_value(beam.par_rho) == 1.5
+    for node in dsg.inp_param_nodes:
+        assert dsg.inp_param_value(node) is node.value
+    assert dsg.inp_param_value(beam.par_rho) == 1.5
 
 
 def test_evaluate_stores_a_stochastic_output_per_metric(beam):
