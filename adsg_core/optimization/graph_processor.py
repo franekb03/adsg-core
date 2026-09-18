@@ -429,7 +429,7 @@ class GraphProcessor:
             if parameter_node.is_stochastic:
                 dist_type = parameter_node.value
                 if isinstance(dist_type, NormalDistribution):
-                    dist = ot.Normal(dist_type.mean, dist_type.var)
+                    dist = ot.Normal(dist_type.mean, dist_type.std)
                 elif isinstance(dist_type, UniformDistribution):
                     dist = ot.Uniform(dist_type.lowerBound, dist_type.upperBound)
                 else:
@@ -442,6 +442,7 @@ class GraphProcessor:
     def param_realization(self, samples: np.ndarray, i_realization: int) -> Dict[InputParameterNode, float]:
         """
         Return a dictionary of InputParameterNode with its associated sample realization.
+        """
         dictionary = {}
         stochastic_realization = self.param_space.param_realization(samples, i_realization)
         name_list = {param.ref: param for param in stochastic_realization}

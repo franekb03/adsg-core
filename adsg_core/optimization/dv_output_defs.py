@@ -25,11 +25,10 @@ SOFTWARE.
 import enum
 import random
 from typing import *
-from adsg_core.graph.adsg_nodes import MetricNode, DesignVariableNode, ChoiceNode, InputParameterNode
+from adsg_core.graph.adsg_nodes import (MetricNode, DesignVariableNode, ChoiceNode, InputParameterNode,
+                                        ParameterDistribution)
 
 __all__ = ['DesVar', 'Direction', 'Objective', 'Constraint', 'InpParam']
-
-from sb_arch_opt.uncertainty import StochasticOutput
 
 
 class DesVar:
@@ -138,7 +137,7 @@ class DesVar:
 class InpParam:
     """Class representing an input parameter."""
 
-    def __init__(self, name: str, value: Union[StochasticOutput, float], node: InputParameterNode = None):
+    def __init__(self, name: str, value: Union[ParameterDistribution, float], node: InputParameterNode = None):
         self._name = name
         self._value = value
         self._node = node
@@ -157,7 +156,7 @@ class InpParam:
         return self._name
 
     @property
-    def value(self) -> Union[StochasticOutput, float]:
+    def value(self) -> Union[ParameterDistribution, float]:
         return self._value
 
     @property

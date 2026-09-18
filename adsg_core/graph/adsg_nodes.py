@@ -54,7 +54,7 @@ except ImportError:
 
 __all__ = ['check_dependency', 'DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
            'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'InputParameterNode', 'MetricNode', 'MetricType', 'EdgeType', 'EdgeTuple',
-           'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode', 'HAS_SB_ARCH_OPT', 'NormalDistribution', 'UniformDistribution']
+           'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode', 'HAS_SB_ARCH_OPT', 'ParameterDistribution', 'NormalDistribution', 'UniformDistribution']
 
 log = logging.getLogger('adsg.opt')
 
@@ -465,13 +465,21 @@ class DesignVariableNode(DSGNode):
     def __str__(self):
         return f'DV[{self.name}]'
 
-@dataclass
-class NormalDistribution:
-    mean: float
-    var: float
+class ParameterDistribution:
+    """
+    Base class for the distribution of a stochastic input parameter. Deliberately free of OpenTURNS: the graph
+    only stores which distribution a parameter has, and the ot object is built from it when a UQ method needs
+    one (see `GraphProcessor.param_space`).
+    """
 
 @dataclass
-class UniformDistribution:
+class NormalDistribution(ParameterDistribution):
+    """Normal distribution; `std` is the standard deviation, not the variance"""
+    mean: float
+    std: float
+
+@dataclass
+class UniformDistribution(ParameterDistribution):
     lowerBound: float
     upperBound: float
 
@@ -490,10 +498,7 @@ class InputParameterNode(DSGNode):
 
     @property
     def is_stochastic(self) -> bool:
-        if isinstance(self.value, float):
-            return False
-        else:
-            return True
+        return isinstance(self.value, ParameterDistribution)
 
     def get_export_title(self) -> str:
         if self.assigned_value is not None:

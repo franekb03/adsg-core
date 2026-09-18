@@ -335,7 +335,8 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
             'endurance_mean': endurance.mean,
             'endurance_std': endurance.std,
             'endurance_robust': endurance.mean - self.k*endurance.std,
-            'mass': mass.mean,
+            # The mass does not depend on any uncertain parameter, so it is a plain value rather than an output
+            'mass': mass,
         }
 
 

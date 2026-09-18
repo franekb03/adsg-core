@@ -36,7 +36,7 @@ from adsg_core.optimization.graph_processor import *
 __all__ = ['StochasticDSGEvaluator', 'StochasticADSGEvaluator', 'HAS_SB_ARCH_OPT', 'check_dependency']
 try:
     from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
-    from sb_arch_opt.uncertainty import Scalarization, StochasticResults, UQMethod, StochasticParameterSpace, StochasticOutput
+    from sb_arch_opt.uncertainty import Scalarization, UQMethod, StochasticParameterSpace, StochasticOutput
     from sb_arch_opt.sampling import TrailRepairWarning
 
     warnings.simplefilter("ignore", category=TrailRepairWarning)
@@ -47,9 +47,6 @@ except ImportError:
     HAS_SB_ARCH_OPT = False
 
     class Scalarization:
-        pass
-
-    class StochasticResults:
         pass
 
     class UQMethod:
