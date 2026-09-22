@@ -28,13 +28,12 @@ import numpy as np
 from typing import *
 from concurrent.futures import wait, ProcessPoolExecutor, ThreadPoolExecutor
 
-from adsg_core.optimization.stochastic_evaluator import  StochasticDSGEvaluator
+from adsg_core.optimization.stochastic_evaluator import  StochasticDSGEvaluator, StochasticParameterSpace, UQMethod, Scalarization
 from adsg_core.optimization.problem import DSGDesignSpace
 
 
 try:
     from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
-    from sb_arch_opt.uncertainty import *
     from pymoo.core.variable import Variable, Real, Integer, Choice
 
     from sb_arch_opt.sampling import TrailRepairWarning
@@ -90,8 +89,8 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
     def __init__(self, evaluator: StochasticDSGEvaluator,
                  param_space: StochasticParameterSpace,
                  uq_method: UQMethod,
-                 obj_scalar: List[Scalarization] = None,
-                 constr_scalar: List[Scalarization] = None,
+                 obj_scalar: Optional[List[Scalarization]] = None,
+                 constr_scalar: Optional[List[Scalarization]] = None,
                  n_parallel=None, parallel_processes=True):
         check_dependency()
 
@@ -104,13 +103,11 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
 
         design_space = DSGDesignSpace(evaluator)
 
-
         super().__init__(design_space, param_space=param_space, uq_method=uq_method, n_obj=n_obj, n_ieq_constr=n_constr,
                          obj_scalar=obj_scalar, ieq_constr_scalar=constr_scalar)
 
         self.obj_is_max = [obj.dir.value > 0 for obj in evaluator.objectives]
         self.con_ref = [(con.dir.value > 0, con.ref) for con in evaluator.constraints]
-
 
     def _arch_evaluate(self, x: np.ndarray, is_active_out: np.ndarray, f_out: np.ndarray, g_out: np.ndarray, h_out: np.ndarray, *args,
                        f_stoch_out: np.ndarray=None, g_stoch_out: np.ndarray=None, h_stoch_out: np.ndarray=None, **kwargs):

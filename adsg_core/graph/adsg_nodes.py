@@ -22,46 +22,20 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-import logging
 import math
 import copy
 import enum
 import itertools
-import warnings
-from dataclasses import dataclass
-
 import numpy as np
-import openturns as ot
 from typing import *
 import networkx as nx
 from collections import OrderedDict
 from adsg_core.graph.graph_edges import *
 
-
-try:
-    from sb_arch_opt.uncertainty import StochasticOutput
-
-    from sb_arch_opt.sampling import TrailRepairWarning
-    warnings.simplefilter("ignore", category=TrailRepairWarning)
-
-    HAS_SB_ARCH_OPT = True
-
-except ImportError:
-    HAS_SB_ARCH_OPT = False
-
-    class StochasticOutput:
-        pass
-
-__all__ = ['check_dependency', 'DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
+__all__ = ['DSGNode', 'ChoiceNode', 'SelectionChoiceNode', 'ConnectionChoiceNode', 'ConnectorNode', 'NamedNode',
            'ConnectorDegreeGroupingNode', 'DesignVariableNode', 'InputParameterNode', 'MetricNode', 'MetricType', 'EdgeType', 'EdgeTuple',
-           'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode', 'HAS_SB_ARCH_OPT', 'NormalDistribution', 'UniformDistribution']
+           'NodeExportShape', 'ADSGNode', 'CollectorNode', 'NonSelectionNode']
 
-log = logging.getLogger('adsg.opt')
-
-
-def check_dependency():
-    if not HAS_SB_ARCH_OPT:
-        raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt')
 
 class NodeExportShape(enum.Enum):
     CIRCLE = 0
@@ -464,16 +438,6 @@ class DesignVariableNode(DSGNode):
 
     def __str__(self):
         return f'DV[{self.name}]'
-
-@dataclass
-class NormalDistribution:
-    mean: float
-    var: float
-
-@dataclass
-class UniformDistribution:
-    lowerBound: float
-    upperBound: float
 
 class InputParameterNode(DSGNode):
     """

@@ -24,12 +24,11 @@ SOFTWARE.
 """
 import enum
 import random
+import openturns as ot
 from typing import *
 from adsg_core.graph.adsg_nodes import MetricNode, DesignVariableNode, ChoiceNode, InputParameterNode
 
 __all__ = ['DesVar', 'Direction', 'Objective', 'Constraint', 'InpParam']
-
-from sb_arch_opt.uncertainty import StochasticOutput
 
 
 class DesVar:
@@ -135,10 +134,11 @@ class DesVar:
     def __repr__(self):
         return str(self)
 
+
 class InpParam:
     """Class representing an input parameter."""
 
-    def __init__(self, name: str, value: Union[StochasticOutput, float], node: InputParameterNode = None):
+    def __init__(self, name: str, value: Union[ot.DistributionImplementation, float], node: InputParameterNode = None):
         self._name = name
         self._value = value
         self._node = node
@@ -157,7 +157,7 @@ class InpParam:
         return self._name
 
     @property
-    def value(self) -> Union[StochasticOutput, float]:
+    def value(self) -> Union[ot.DistributionImplementation, float]:
         return self._value
 
     @property

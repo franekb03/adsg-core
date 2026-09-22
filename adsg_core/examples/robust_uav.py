@@ -150,10 +150,10 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
         # Uncertain parameters: three always present, two conditional on the selected powertrain. The nodes are
         # identities only - the distributions are attached to the graph in get_dsg().
         self.par_payload = InputParameterNode('payload', 2.0)
-        self.par_headwind = InputParameterNode('headwind', UniformDistribution(4., 10.))
-        self.par_drag = InputParameterNode('drag_factor', NormalDistribution(1., .08))
-        self.par_eta_bat = InputParameterNode('eta_bat', NormalDistribution(.92, .03))
-        self.par_bsfc = InputParameterNode('bsfc', NormalDistribution(.42, .075))
+        self.par_headwind = InputParameterNode('headwind', ot.Uniform(4., 10.))
+        self.par_drag = InputParameterNode('drag_factor', ot.Normal(1., .08))
+        self.par_eta_bat = InputParameterNode('eta_bat', ot.Normal(.92, .03))
+        self.par_bsfc = InputParameterNode('bsfc', ot.Normal(.42, .075))
 
         self.metric_node_map: Dict[str, MetricNode] = {}
         self.option_nodes: Dict[str, List[UAVOptionNode]] = {}
@@ -335,7 +335,7 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
             'endurance_mean': endurance.mean,
             'endurance_std': endurance.std,
             'endurance_robust': endurance.mean - self.k*endurance.std,
-            'mass': mass.mean,
+            'mass': mass,
         }
 
 
@@ -360,7 +360,7 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
 
     # One seeded draw of the uncertain parameters is reused for every design point (common random numbers), so
     # that design points are comparable to each other and the surrogate sees a smooth response
-    problem = evaluator.get_problem(n_parallel=1)
+    problem = evaluator.get_problem(n_parallel=4)
 
     problem.print_stats()
 
@@ -398,8 +398,9 @@ if __name__ == '__main__':
     result = evaluator.evaluate(dsg)
     print(result)
     dsg_all = evaluator.get_dsg()
-    dsg_all.render()
-    dsg.render()
+    # dsg_all.render()
+    # dsg.render()
+
 
 
     run_sbo(uq, n_infill=20, init_size=40, k=3, objective=None, seed=42, verbose=True)

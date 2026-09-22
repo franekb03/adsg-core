@@ -39,9 +39,8 @@ from adsg_core.optimization.assign_enc.selector import EncoderSelector
 from adsg_core.optimization.assign_enc.time_limiter import run_timeout
 from adsg_core.optimization.assign_enc.assignment_manager import AssignmentManagerBase
 
-
 try:
-    from sb_arch_opt.uncertainty import StochasticParameterSpace, StochasticParameter, StochasticOutput
+    from sb_arch_opt.uncertainty import StochasticParameterSpace, StochasticParameter, EvaluationOutput
 
     from sb_arch_opt.sampling import TrailRepairWarning
     warnings.simplefilter("ignore", category=TrailRepairWarning)
@@ -57,10 +56,11 @@ except ImportError:
     class StochasticParameter:
         pass
 
-    class StochasticOutput:
+    class EvaluationOutput:
         pass
 
-__all__ = ['GraphProcessor', 'MetricType', 'SelChoiceEncoderType', 'HAS_SB_ARCH_OPT', 'check_dependency']
+__all__ = ['GraphProcessor', 'MetricType', 'SelChoiceEncoderType', 'HAS_SB_ARCH_OPT', 'check_dependency', 'EvaluationOutput',
+           'StochasticParameterSpace', 'StochasticParameter']
 
 log = logging.getLogger('adsg.opt')
 
@@ -68,6 +68,7 @@ log = logging.getLogger('adsg.opt')
 def check_dependency():
     if not HAS_SB_ARCH_OPT:
         raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt')
+
 
 def catch_memory_overflow(func):
     def wrapper(obj: 'GraphProcessor', *args, **kwargs):
@@ -427,33 +428,10 @@ class GraphProcessor:
         parameters = []
         for parameter_node in self.inp_param_nodes:
             if parameter_node.is_stochastic:
-                dist_type = parameter_node.value
-                if isinstance(dist_type, NormalDistribution):
-                    dist = ot.Normal(dist_type.mean, dist_type.var)
-                elif isinstance(dist_type, UniformDistribution):
-                    dist = ot.Uniform(dist_type.lowerBound, dist_type.upperBound)
-                else:
-                    raise ValueError('Unsupported distribution type: %r' % dist_type)
-
+                dist = parameter_node.value
                 parameters.append(StochasticParameter(parameter_node.name, dist, ref=parameter_node))
 
         return StochasticParameterSpace(parameters)
-
-    def param_realization(self, samples: np.ndarray, i_realization: int) -> Dict[InputParameterNode, float]:
-        """
-        Return a dictionary of InputParameterNode with its associated sample realization.
-        dictionary = {}
-        stochastic_realization = self.param_space.param_realization(samples, i_realization)
-        name_list = {param.ref: param for param in stochastic_realization}
-        for parameter_node in self.inp_param_nodes:
-            param = name_list.get(parameter_node)
-            if param is None:
-                # If deterministic use fixed value stored on the node
-                dictionary[parameter_node] = parameter_node.value
-            else:
-                # If stochastic use sample realization that was computed with UQ method
-                dictionary[parameter_node] = param.sample
-        return dictionary
 
     @cached_property
     def metric_nodes(self) -> List[MetricNode]:

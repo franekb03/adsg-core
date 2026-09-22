@@ -26,17 +26,15 @@ import logging
 import math
 from typing import *
 import warnings
-
 import numpy as np
-
 from adsg_core import DSGType, DSGEvaluator, InputParameterNode
 from adsg_core.graph.adsg_nodes import MetricNode
 from adsg_core.optimization.graph_processor import *
 
-__all__ = ['StochasticDSGEvaluator', 'StochasticADSGEvaluator', 'HAS_SB_ARCH_OPT', 'check_dependency']
+__all__ = ['StochasticDSGEvaluator', 'StochasticADSGEvaluator', 'HAS_SB_ARCH_OPT', 'check_dependency', 'Scalarization', 'StochasticParameterSpace']
+
 try:
-    from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
-    from sb_arch_opt.uncertainty import Scalarization, StochasticResults, UQMethod, StochasticParameterSpace, StochasticOutput
+    from sb_arch_opt.stochastic_problem import StochasticArchOptProblem, UQMethod, Scalarization
     from sb_arch_opt.sampling import TrailRepairWarning
 
     warnings.simplefilter("ignore", category=TrailRepairWarning)
@@ -46,28 +44,22 @@ try:
 except ImportError:
     HAS_SB_ARCH_OPT = False
 
-    class Scalarization:
+    class StochasticArchOptProblem:
         pass
 
-    class StochasticResults:
+    class Scalarization:
         pass
 
     class UQMethod:
         pass
 
-    class StochasticParameterSpace:
-        pass
-
-    class StochasticOutput:
-        pass
-
 log = logging.getLogger('adsg.opt')
 
-EvaluationOutput = Union[StochasticOutput, float]
 
 def check_dependency():
     if not HAS_SB_ARCH_OPT:
         raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt')
+
 
 class StochasticDSGEvaluator(DSGEvaluator):
     """
@@ -80,14 +72,13 @@ class StochasticDSGEvaluator(DSGEvaluator):
     def __init__(self,
                  *args,
                  uq_method: UQMethod,
-                 obj_scalar: List[Scalarization] = None,
-                 constr_scalar: List[Scalarization] = None,
+                 obj_scalar: Optional[List[Scalarization]] = None,
+                 constr_scalar: Optional[List[Scalarization]] = None,
                  **kwargs):
 
         self.uq_method = uq_method
         self.obj_scalar = obj_scalar
         self.constr_scalar = constr_scalar
-
 
         super().__init__(*args, **kwargs)
 
@@ -101,9 +92,9 @@ class StochasticDSGEvaluator(DSGEvaluator):
                                            self.constr_scalar,
                                            n_parallel=n_parallel, parallel_processes=parallel_processes)
 
-    def _param_realization(self, param_nodes: List[InputParameterNode], param_space: StochasticParameterSpace, samples: np.ndarray, i_realization: int) -> Dict[InputParameterNode, float]:
+    def _param_realization(self, param_nodes: List[InputParameterNode], samples: np.ndarray, i_realization: int) -> Dict[InputParameterNode, float]:
         dictionary = {}
-        stochastic_realization = param_space.param_realization(samples, i_realization)
+        stochastic_realization = self.param_space.param_realization(samples, i_realization)
         name_list = {param.ref: param for param in stochastic_realization}
         for param in self.inp_params:
             if param.node in param_nodes:
@@ -137,7 +128,7 @@ class StochasticDSGEvaluator(DSGEvaluator):
 
         for i in range(n_s):
             # Create a dictionary that associates parameters with its realization
-            sample_values = self._param_realization(param_nodes, self.param_space, stochastic_samples, i)
+            sample_values = self._param_realization(param_nodes, stochastic_samples, i)
 
             if sample_values is None:
                 raise ValueError(f"No sample values available for realization {i}")

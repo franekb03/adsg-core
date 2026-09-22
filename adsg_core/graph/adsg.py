@@ -22,10 +22,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-import logging
 import numpy as np
 import openturns as ot
-import warnings
 from typing import *
 import networkx as nx
 from natsort import natsorted
@@ -37,29 +35,10 @@ from adsg_core.graph.choices import *
 from adsg_core.graph.incompatibility import *
 from adsg_core.graph.influence_matrix import *
 from adsg_core.graph.choice_constraints import *
+from sb_arch_opt.uncertainty import EvaluationOutput
 
-try:
-    from sb_arch_opt.stochastic_problem import StochasticOutput
+__all__ = ['DSG', 'EdgeType', 'CDVNode', 'ChoiceConstraint', 'ChoiceConstraintType', 'DSGType', 'ADSG', 'ADSGType', 'EvaluationOutput']
 
-    from sb_arch_opt.sampling import TrailRepairWarning
-    warnings.simplefilter("ignore", category=TrailRepairWarning)
-
-    HAS_SB_ARCH_OPT = True
-
-except ImportError:
-    HAS_SB_ARCH_OPT = False
-
-    class StochasticOutput:
-        pass
-
-__all__ = ['DSG', 'EdgeType', 'CDVNode', 'ChoiceConstraint', 'ChoiceConstraintType', 'DSGType', 'ADSG', 'ADSGType', 'HAS_SB_ARCH_OPT', 'check_dependency']
-
-log = logging.getLogger('adsg.opt')
-
-
-def check_dependency():
-    if not HAS_SB_ARCH_OPT:
-        raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt')
 
 class DSG:
     """
@@ -80,8 +59,8 @@ class DSG:
 
         self._update_connector_grouping_degrees()
         self._des_var_values: Dict[DesignVariableNode, Union[float, int]] = (_des_var_values or {}).copy()
-        self._inp_param_values: Dict[InputParameterNode, Union[object, float]] = (_inp_param_values or {}).copy()
-        self._metric_values: Dict[MetricNode, Union[StochasticOutput, float]] = (_metric_values or {}).copy()
+        self._inp_param_values: Dict[InputParameterNode, Union[ot.DistributionImplementation, float]] = (_inp_param_values or {}).copy()
+        self._metric_values: Dict[MetricNode, EvaluationOutput] = (_metric_values or {}).copy()
 
     @staticmethod
     def _get_empty_graph():
@@ -313,17 +292,17 @@ class DSG:
     def inp_param_nodes(self) -> List[InputParameterNode]:
         return self.get_nodes_by_type(InputParameterNode)
 
-    def set_inp_param_value(self, parameter_node: InputParameterNode, value: Union[object, float]):
+    def set_inp_param_value(self, parameter_node: InputParameterNode, value: Union[ot.DistributionImplementation, float]):
         """
         Set the value of the realization of the respective input parameter.
         """
         self._inp_param_values[parameter_node] = value
 
-    def inp_param_value(self, parameter_node: InputParameterNode) -> Optional[Union[object, float]]:
+    def inp_param_value(self, parameter_node: InputParameterNode) -> Optional[Union[ot.DistributionImplementation, float]]:
         return self._inp_param_values.get(parameter_node)
 
     @property
-    def inp_param_values(self) -> Dict[InputParameterNode, Union[object, float]]:
+    def inp_param_values(self) -> Dict[InputParameterNode, Union[ot.DistributionImplementation, float]]:
         return self._inp_param_values.copy()
 
     def reset_inp_param_values(self):
@@ -333,23 +312,21 @@ class DSG:
     def metric_nodes(self) -> List[MetricNode]:
         return self.get_nodes_by_type(MetricNode)
 
-    def set_metric_value(self, metric_node: MetricNode, value: Union[StochasticOutput, float]):
+    def set_metric_value(self, metric_node: MetricNode, value: EvaluationOutput):
         """
         Set the value of a metric node.
         """
         self._metric_values[metric_node] = value
 
-    def metric_value(self, metric_node) -> Optional[Union[StochasticOutput, float]]:
+    def metric_value(self, metric_node) -> Optional[EvaluationOutput]:
         return self._metric_values.get(metric_node)
 
     @property
-    def metric_values(self) -> Dict[MetricNode, Union[StochasticOutput, float]]:
+    def metric_values(self) -> Dict[MetricNode, EvaluationOutput]:
         return self._metric_values.copy()
 
     def reset_metric_values(self):
         self._metric_values = {}
-
-
 
     """################################
     ### CHOICE CONSTRAINT FUNCTIONS ###
