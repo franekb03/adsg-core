@@ -77,7 +77,7 @@ class StochasticDSGEvaluator(DSGEvaluator):
                 stoch_param = name_list.get(param.node)
                 if stoch_param is None:
                     # If deterministic use fixed value stored on the node
-                    dictionary[param.node] = param.node.value
+                    dictionary[param.node] = param.node.dist
                 else:
                     # If stochastic use sample realization that was computed with UQ method
                     dictionary[param.node] = stoch_param.sample

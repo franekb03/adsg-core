@@ -226,7 +226,7 @@ def test_param_space_uses_the_distributions_from_the_graph(n):
     processor = GraphProcessor(_dsg_with_parameters(n, [normal, uniform, fixed]))
 
     assert processor.param_space.parameter_names == ['h', 'u']
-    assert [parameter.value for parameter in processor.param_space._parameters] == [uniform.value, normal.value]
+    assert [parameter.dist for parameter in processor.param_space._parameters] == [uniform.value, normal.value]
 
     marginals = {name: processor.param_space.joint_dist.getMarginal(i)
                  for i, name in enumerate(processor.param_space.parameter_names)}

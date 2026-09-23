@@ -243,7 +243,7 @@ class RobustUAVEvaluator(StochasticDSGEvaluator):
     @staticmethod
     def _decision_values(dsg: DSGType) -> Dict[str, Any]:
         """Read the selected option of every decision taken in this architecture"""
-        return {node.decision: node.value for node in dsg.get_nodes_by_type(UAVOptionNode)}
+        return {node.decision: node.dist for node in dsg.get_nodes_by_type(UAVOptionNode)}
 
     @staticmethod
     def _des_var_values(dsg: DSGType) -> Dict[str, float]:
