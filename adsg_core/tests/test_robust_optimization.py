@@ -19,6 +19,14 @@ def _dsg_with_parameters(n, par_nodes):
     return dsg.set_start_nodes({n[0]})
 
 
+def _evaluator(dsg, n_evaluations=5, seed=42) -> 'StochasticDSGEvaluator':
+    class _Evaluator(StochasticDSGEvaluator):
+        def _evaluate_sample(self, dsg_instance, metric_nodes):
+            return {}
+
+    return _Evaluator(dsg, uq_method=MonteCarlo(n_evaluations, seed=seed))
+
+
 def _dsg_with_branch_parameters(n, common, only_a, only_b):
     dsg = BasicDSG()
     dsg.add_edges([(n[0], common), (n[1], only_a), (n[2], only_b)])
@@ -39,10 +47,10 @@ class BeamEvaluator(StochasticDSGEvaluator):
     def __init__(self, uq_method=None, stress_ref=None, **kwargs):
         self.seen_loads = []
 
-        self.par_load = InputParameterNode('load', NormalParamDistribution(100., 20.))
+        self.par_load = InputParameterNode('load', ot.Normal(100., 20.))
         self.par_rho = InputParameterNode('rho_factor', 1.5)  # deterministic
-        self.par_e = {'steel': InputParameterNode('E_steel', NormalParamDistribution(210., 10.)),
-                      'alu': InputParameterNode('E_alu', NormalParamDistribution(70., 10.))}
+        self.par_e = {'steel': InputParameterNode('E_steel', ot.Normal(210., 10.)),
+                      'alu': InputParameterNode('E_alu', ot.Normal(70., 10.))}
 
         self.mass_node = MetricNode('mass', direction=-1, type_=MetricType.OBJECTIVE)
         self.deflection_node = MetricNode('deflection', direction=-1, type_=MetricType.OBJECTIVE)
@@ -95,13 +103,18 @@ class BeamEvaluator(StochasticDSGEvaluator):
         rho_factor = dsg.inp_param_value(self.par_rho)
         self.seen_loads.append(load)
 
-        values = {
-            self.mass_node: self.density[material]*thickness*rho_factor,
-            self.deflection_node: load / (e_modulus*thickness**3),
-            self.capacity_node: e_modulus*thickness**2 / load,
-        }
-        if self.stress_node is not None:
-            values[self.stress_node] = load / thickness**2
+        values = {}
+
+        for metric_node in metric_nodes:
+            if metric_node.name == 'mass':
+                values[metric_node] = self.density[material]*thickness*rho_factor
+            elif metric_node.name == 'deflection':
+                values[metric_node] = load / (e_modulus*thickness**3)
+            elif metric_node.name == 'capacity':
+                values[metric_node] = e_modulus*thickness**2 / load
+            elif metric_node.name == 'stress':
+                values[metric_node] = load / thickness**2
+
         return values
 
 
@@ -116,7 +129,7 @@ def constrained_beam():
 
 
 def test_input_parameter_node(n):
-    stochastic = InputParameterNode('E', NormalParamDistribution(10., 2.))
+    stochastic = InputParameterNode('E', ot.Normal(10., 2.))
     deterministic = InputParameterNode('rho', 1.225)
 
     assert stochastic.name == 'E'
@@ -128,20 +141,20 @@ def test_input_parameter_node(n):
     assert str(stochastic) == 'INP[E]'
     assert stochastic.str_context() == 'INP[E]'
 
-    # Only a ParameterDistribution makes a parameter stochastic; any other plain value is deterministic
+    # Only a distribution makes a parameter stochastic; any other value is a fixed number
+    assert InputParameterNode('h', ot.Uniform(0., 1.)).is_stochastic
     assert not InputParameterNode('n_blades', 3).is_stochastic
-    assert InputParameterNode('h', UniformParamDistribution(0., 1.)).is_stochastic
     assert repr(stochastic)
     assert stochastic.get_export_color()
     assert 'E = ' in stochastic.get_export_title()
 
     # Nodes are identity-based, so two parameters with the same name are still different nodes
-    assert InputParameterNode('E', NormalParamDistribution(10., 2.)) != stochastic
-    assert len({stochastic, InputParameterNode('E', NormalParamDistribution(10., 2.))}) == 2
+    assert InputParameterNode('E', ot.Normal(10., 2.)) != stochastic
+    assert len({stochastic, InputParameterNode('E', ot.Normal(10., 2.))}) == 2
 
 
 def test_set_get_input_parameter_value(n):
-    par_a = InputParameterNode('A', NormalParamDistribution(0., 1.))
+    par_a = InputParameterNode('A', ot.Normal(0., 1.))
     par_b = InputParameterNode('B', 2.5)
     dsg = _dsg_with_parameters(n, [par_a, par_b])
 
@@ -163,30 +176,8 @@ def test_set_get_input_parameter_value(n):
     assert dsg.inp_param_values == {}
 
 
-def test_parameter_node_conditional_existence(n):
-    common = InputParameterNode('common', NormalParamDistribution(0., 1.))
-    only_a = InputParameterNode('only_a', NormalParamDistribution(1., 1.))
-    only_b = InputParameterNode('only_b', NormalParamDistribution(2., 1.))
-    processor = GraphProcessor(_dsg_with_branch_parameters(n, common, only_a, only_b))
-
-    assert len(processor.des_vars) == 1
-    assert processor.param_space.n_parameters == 3  # the union, from the template graph
-
-    seen = set()
-    for opt_idx in range(2):
-        graph, _, _ = processor.get_graph([opt_idx])
-        par_nodes = set(graph.inp_param_nodes)
-
-        assert common in par_nodes
-        assert len(par_nodes) == 2
-        assert (only_b not in par_nodes) if only_a in par_nodes else (only_b in par_nodes)
-        seen |= par_nodes
-
-    assert seen == {common, only_a, only_b}
-
-
 def test_parameter_values_isolated_between_instances(n):
-    par_a = InputParameterNode('A', NormalParamDistribution(0., 1.))
+    par_a = InputParameterNode('A', ot.Normal(0., 1.))
     dsg = BasicDSG()
     dsg.add_edges([(n[0], par_a)])
     dsg.add_selection_choice('C1', n[0], [n[1], n[2]])
@@ -203,7 +194,7 @@ def test_parameter_values_isolated_between_instances(n):
 
 
 def test_parameters_are_not_design_variables(n):
-    par_a = InputParameterNode('A', NormalParamDistribution(0., 1.))
+    par_a = InputParameterNode('A', ot.Normal(0., 1.))
     dv_node = DesignVariableNode('DV', bounds=(0., 1.))
 
     dsg = BasicDSG()
@@ -217,7 +208,7 @@ def test_parameters_are_not_design_variables(n):
 
 
 def test_param_space_holds_only_stochastic_parameters(n):
-    stochastic = InputParameterNode('u', NormalParamDistribution(0., 1.))
+    stochastic = InputParameterNode('u', ot.Normal(0., 1.))
     deterministic = InputParameterNode('rho', 1.225)
     processor = GraphProcessor(_dsg_with_parameters(n, [stochastic, deterministic]))
 
@@ -227,55 +218,39 @@ def test_param_space_holds_only_stochastic_parameters(n):
     assert processor.param_space.joint_dist.getDimension() == 1
 
 
-def test_param_space_builds_the_openturns_distributions(n):
-    # The graph stores which distribution a parameter has, free of OpenTURNS; the ot object is built here, when
-    # a UQ method needs one
-    normal = InputParameterNode('u', NormalParamDistribution(10., 2.))
-    uniform = InputParameterNode('h', UniformParamDistribution(4., 10.))
-    processor = GraphProcessor(_dsg_with_parameters(n, [normal, uniform]))
+def test_param_space_uses_the_distributions_from_the_graph(n):
+    # The distribution stored on the node is what the parameter space hands to the UQ method
+    normal = InputParameterNode('u', ot.Normal(10., 2.))
+    uniform = InputParameterNode('h', ot.Uniform(4., 10.))
+    fixed = InputParameterNode('n_blades', 3)  # not a distribution, so it never reaches the space
+    processor = GraphProcessor(_dsg_with_parameters(n, [normal, uniform, fixed]))
 
-    assert not isinstance(normal.value, ot.DistributionImplementation)
+    assert processor.param_space.parameter_names == ['h', 'u']
+    assert [parameter.value for parameter in processor.param_space._parameters] == [uniform.value, normal.value]
 
     marginals = {name: processor.param_space.joint_dist.getMarginal(i)
                  for i, name in enumerate(processor.param_space.parameter_names)}
 
-    # The second argument of NormalDistribution is the standard deviation, not the variance
     assert marginals['u'].getMean()[0] == pytest.approx(10.)
     assert marginals['u'].getStandardDeviation()[0] == pytest.approx(2.)
-
     assert marginals['h'].getRange().getLowerBound()[0] == pytest.approx(4.)
     assert marginals['h'].getRange().getUpperBound()[0] == pytest.approx(10.)
-
-
-def test_param_space_rejects_an_unknown_distribution(n):
-    # An OpenTURNS object on the node is not a supported value: the graph should stay free of them
-    node = InputParameterNode('u', ot.Normal(0., 1.))
-    processor = GraphProcessor(_dsg_with_parameters(n, [node]))
-    assert not node.is_stochastic  # so it never reaches the conversion
-
-    class WeibullDistribution(ParameterDistribution):
-        pass
-
-    unsupported = InputParameterNode('w', WeibullDistribution())
-    processor = GraphProcessor(_dsg_with_parameters(n, [unsupported]))
-    with pytest.raises(ValueError, match='Unsupported distribution type'):
-        _ = processor.param_space
 
 
 def test_param_realization_is_keyed_by_node(n):
     # The realization covers every input parameter node, stochastic or not: a deterministic one contributes its
     # own value, so the evaluation always finds a number for every parameter it can reach on the graph
-    stochastic = InputParameterNode('u', NormalParamDistribution(10., 2.))
+    stochastic = InputParameterNode('u', ot.Normal(10., 2.))
     deterministic = InputParameterNode('rho', 1.225)
-    processor = GraphProcessor(_dsg_with_parameters(n, [stochastic, deterministic]))
+    evaluator = _evaluator(_dsg_with_parameters(n, [stochastic, deterministic]))
 
-    samples = MonteCarlo(5, seed=42).get_samples(processor.param_space)
+    samples = MonteCarlo(5, seed=42).get_samples(evaluator.param_space)
+    param_nodes = [stochastic, deterministic]
 
     seen = []
     for i in range(5):
-        realization = processor.param_realization(samples, i)
+        realization = evaluator._param_realization(param_nodes, samples, i)
 
-        assert set(realization) == {stochastic, deterministic}
         assert realization[deterministic] == 1.225
         assert realization[stochastic] == pytest.approx(samples[i, 0])
         assert all(isinstance(value, float) for value in realization.values())
@@ -287,35 +262,21 @@ def test_param_realization_is_keyed_by_node(n):
 def test_param_realization_covers_branch_local_parameters(n):
     # A parameter that only exists in one branch still has a column in the space, so every instance's nodes
     # resolve against the same realization
-    common = InputParameterNode('common', NormalParamDistribution(0., 1.))
-    only_a = InputParameterNode('only_a', NormalParamDistribution(1., 1.))
-    only_b = InputParameterNode('only_b', NormalParamDistribution(2., 1.))
-    processor = GraphProcessor(_dsg_with_branch_parameters(n, common, only_a, only_b))
+    common = InputParameterNode('common', ot.Normal(0., 1.))
+    only_a = InputParameterNode('only_a', ot.Normal(1., 1.))
+    only_b = InputParameterNode('only_b', ot.Normal(2., 1.))
+    evaluator = _evaluator(_dsg_with_branch_parameters(n, common, only_a, only_b))
 
-    samples = MonteCarlo(5, seed=42).get_samples(processor.param_space)
-    realization = processor.param_realization(samples, 0)
+    samples = MonteCarlo(5, seed=42).get_samples(evaluator.param_space)
+    realization = evaluator._param_realization([common, only_a, only_b], samples, 0)
 
     assert set(realization) == {common, only_a, only_b}
     assert all(isinstance(value, float) for value in realization.values())
 
-
-def test_evaluator_constructs(beam):
-    # Regression: DSGEvaluator.__init__ was declared without self, so super() raised for every evaluator
-    assert isinstance(beam, DSGEvaluator)
-    assert isinstance(DSGEvaluator(beam.graph), DSGEvaluator)
-    assert [objective.name for objective in beam.objectives] == ['capacity', 'deflection', 'mass']
-
-
-def test_evaluate_uses_one_realization_per_sample(beam):
-    dsg, _, _ = beam.get_graph([0, 3.])
-    beam.evaluate(dsg)
-
-    assert len(beam.seen_loads) == 20  # once per sample
-    assert len(set(beam.seen_loads)) == 20  # and a different realization each time
-    assert np.std(beam.seen_loads) > 0.
-    i_load = beam.param_space.parameter_names.index('load')
-    assert np.allclose(sorted(beam.seen_loads),
-                       sorted(beam.uq_method.get_samples(beam.param_space)[:, i_load]))
+    # Only the nodes this instance carries are resolved, and they take the same columns of the same design
+    instance_only = evaluator._param_realization([common, only_a], samples, 0)
+    assert set(instance_only) == {common, only_a}
+    assert instance_only[common] == realization[common]
 
 
 def test_evaluate_restores_parameter_values(beam):

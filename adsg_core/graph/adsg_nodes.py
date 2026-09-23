@@ -27,6 +27,7 @@ import copy
 import enum
 import itertools
 import numpy as np
+import openturns as ot
 from typing import *
 import networkx as nx
 from collections import OrderedDict
@@ -444,7 +445,7 @@ class InputParameterNode(DSGNode):
     Node representing input parameter that can be either deterministic or stochastic.
     """
 
-    def __init__(self, name, value, idx=None, **kwargs):
+    def __init__(self, name, value: Union[ot.DistributionImplementation, float], idx=None, **kwargs):
 
         self.name = name
         self.idx = idx
@@ -454,10 +455,8 @@ class InputParameterNode(DSGNode):
 
     @property
     def is_stochastic(self) -> bool:
-        if isinstance(self.value, float):
-            return False
-        else:
-            return True
+        """A parameter is stochastic if its value is a distribution; any other value is a fixed number"""
+        return isinstance(self.value, ot.DistributionImplementation)
 
     def get_export_title(self) -> str:
         if self.assigned_value is not None:

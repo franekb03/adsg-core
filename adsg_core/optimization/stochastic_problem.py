@@ -23,38 +23,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 import logging
-import warnings
 import numpy as np
 from typing import *
 from concurrent.futures import wait, ProcessPoolExecutor, ThreadPoolExecutor
 
-from adsg_core.optimization.stochastic_evaluator import  StochasticDSGEvaluator, StochasticParameterSpace, UQMethod, Scalarization
+from adsg_core.optimization.stochastic_evaluator import  StochasticDSGEvaluator
 from adsg_core.optimization.problem import DSGDesignSpace
-
-
-try:
-    from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
-    from pymoo.core.variable import Variable, Real, Integer, Choice
-
-    from sb_arch_opt.sampling import TrailRepairWarning
-    warnings.simplefilter("ignore", category=TrailRepairWarning)
-
-    HAS_SB_ARCH_OPT = True
-
-except ImportError:
-    HAS_SB_ARCH_OPT = False
-
-    class StochasticArchOptProblem:
-        pass
+from adsg_core.uncertainty import HAS_SB_ARCH_OPT, check_dependency, Scalarization, StochasticArchOptProblem, StochasticParameterSpace, UQMethod
 
 __all__ = ['check_dependency', 'DSGStochasticArchOptProblem', 'HAS_SB_ARCH_OPT', 'ADSGStochasticArchOptProblem']
 
 log = logging.getLogger('adsg.opt')
-
-
-def check_dependency():
-    if not HAS_SB_ARCH_OPT:
-        raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt')
 
 
 class DSGStochasticArchOptProblem(StochasticArchOptProblem):

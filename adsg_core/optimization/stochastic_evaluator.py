@@ -30,35 +30,11 @@ import numpy as np
 from adsg_core import DSGType, DSGEvaluator, InputParameterNode
 from adsg_core.graph.adsg_nodes import MetricNode
 from adsg_core.optimization.graph_processor import *
+from adsg_core.uncertainty import HAS_SB_ARCH_OPT, check_dependency, EvaluationOutput, Scalarization, UQMethod
 
-__all__ = ['StochasticDSGEvaluator', 'StochasticADSGEvaluator', 'HAS_SB_ARCH_OPT', 'check_dependency', 'Scalarization', 'StochasticParameterSpace']
-
-try:
-    from sb_arch_opt.stochastic_problem import StochasticArchOptProblem, UQMethod, Scalarization
-    from sb_arch_opt.sampling import TrailRepairWarning
-
-    warnings.simplefilter("ignore", category=TrailRepairWarning)
-
-    HAS_SB_ARCH_OPT = True
-
-except ImportError:
-    HAS_SB_ARCH_OPT = False
-
-    class StochasticArchOptProblem:
-        pass
-
-    class Scalarization:
-        pass
-
-    class UQMethod:
-        pass
+__all__ = ['StochasticDSGEvaluator', 'StochasticADSGEvaluator', 'HAS_SB_ARCH_OPT', 'check_dependency']
 
 log = logging.getLogger('adsg.opt')
-
-
-def check_dependency():
-    if not HAS_SB_ARCH_OPT:
-        raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt')
 
 
 class StochasticDSGEvaluator(DSGEvaluator):
