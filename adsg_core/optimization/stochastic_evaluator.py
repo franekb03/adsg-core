@@ -27,8 +27,9 @@ import math
 from typing import *
 import warnings
 import numpy as np
-from adsg_core import DSGType, DSGEvaluator, InputParameterNode
-from adsg_core.graph.adsg_nodes import MetricNode
+from adsg_core.graph.adsg import DSGType
+from adsg_core.graph.adsg_nodes import MetricNode, InputParameterNode
+from adsg_core.optimization.evaluator import DSGEvaluator
 from adsg_core.optimization.graph_processor import *
 from adsg_core.uncertainty import HAS_SB_ARCH_OPT, check_dependency, EvaluationOutput, Scalarization, UQMethod
 
@@ -77,7 +78,7 @@ class StochasticDSGEvaluator(DSGEvaluator):
                 stoch_param = name_list.get(param.node)
                 if stoch_param is None:
                     # If deterministic use fixed value stored on the node
-                    dictionary[param.node] = param.node.dist
+                    dictionary[param.node] = param.node.value
                 else:
                     # If stochastic use sample realization that was computed with UQ method
                     dictionary[param.node] = stoch_param.sample
