@@ -136,6 +136,7 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
                 g_out[i, j] = (val-self.con_ref[j][1])*(-1 if self.con_ref[j][0] else 1)
 
     def _print_extra_stats(self):
+        super()._print_extra_stats()
         self.get_discrete_rates(show=True)
         self.evaluator.print_stats()
 
