@@ -25,8 +25,6 @@ SOFTWARE.
 import numpy as np
 import openturns as ot
 from typing import *
-
-from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_basic import *
 from adsg_core.graph.adsg_nodes import *
 from adsg_core.optimization.stochastic_evaluator import DSGStochasticEvaluator

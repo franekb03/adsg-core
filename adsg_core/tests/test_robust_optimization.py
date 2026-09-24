@@ -1,12 +1,9 @@
-import math
 import pytest
 import numpy as np
 import openturns as ot
 from typing import *
-from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_basic import *
 from adsg_core.graph.adsg_nodes import *
-from adsg_core.optimization.evaluator import *
 from adsg_core.optimization.stochastic_evaluator import *
 from adsg_core.optimization.graph_processor import *
 from sb_arch_opt.uncertainty import (MonteCarlo, PolynomialChaos, StochasticOutput,
