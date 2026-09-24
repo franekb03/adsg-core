@@ -154,18 +154,22 @@ class InpParam:
 
     @property
     def name(self) -> str:
+        '''Parameter name'''
         return self._name
 
     @property
     def value(self) -> Union[ot.DistributionImplementation, float]:
+        '''Parameter value'''
         return self._value
 
     @property
     def node(self) -> InputParameterNode:
+        '''Associated input parameter node'''
         return self._node
 
     @property
     def is_stochastic(self) -> bool:
+        '''Whether the input parameter is stochastic'''
         return self._node.is_stochastic
 
     def __str__(self):

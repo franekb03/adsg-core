@@ -30,48 +30,63 @@ __all__ = ['HAS_SB_ARCH_OPT', 'check_dependency', 'EvaluationOutput', 'Scalariza
 
 try:
     from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
-    from sb_arch_opt.uncertainty import (EvaluationOutput, Scalarization, StochasticOutput, StochasticParameter,
-                                         StochasticParameterSpace, UQMethod, MonteCarlo, PolynomialChaos, Mean, Margin)
+    from sb_arch_opt.uncertainty import (Scalarization, StochasticOutput, StochasticParameter, StochasticParameterSpace,
+                                         UQMethod, MonteCarlo, PolynomialChaos, Mean, Margin)
     from sb_arch_opt.sampling import TrailRepairWarning
 
     warnings.simplefilter('ignore', category=TrailRepairWarning)
 
     HAS_SB_ARCH_OPT = True
 
+    EvaluationOutput = Union[StochasticOutput, float]
+    """Output either distribution or numeric value."""
+
 except ImportError:
     HAS_SB_ARCH_OPT = False
+
 
     class StochasticArchOptProblem:
         pass
 
+
     class Scalarization:
         pass
+
 
     class StochasticOutput:
         pass
 
+
     class StochasticParameter:
         pass
+
 
     class StochasticParameterSpace:
         pass
 
+
     class UQMethod:
         pass
+
 
     class MonteCarlo:
         pass
 
+
     class PolynomialChaos:
         pass
+
 
     class Mean:
         pass
 
+
     class Margin:
         pass
 
+
     EvaluationOutput = Union[StochasticOutput, float]
+    """Output either distribution or numeric value."""
 
 
 def check_dependency():

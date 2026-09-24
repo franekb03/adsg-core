@@ -73,7 +73,7 @@ class DSGEvaluator(GraphProcessor):
 
         return objective_values, constraint_values
 
-    def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, float]:
+    def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, EvaluationOutput]:
         """
         Implement this function to provide DSG evaluation.
         Should return a mapping from metric node to float (NaN is allowed).

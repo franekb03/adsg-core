@@ -33,12 +33,12 @@ from adsg_core.optimization.evaluator import DSGEvaluator
 from adsg_core.optimization.graph_processor import *
 from adsg_core.uncertainty import HAS_SB_ARCH_OPT, check_dependency, EvaluationOutput, Scalarization, UQMethod
 
-__all__ = ['StochasticDSGEvaluator', 'StochasticADSGEvaluator', 'HAS_SB_ARCH_OPT', 'check_dependency']
+__all__ = ['DSGStochasticEvaluator', 'StochasticADSGEvaluator', 'HAS_SB_ARCH_OPT', 'check_dependency']
 
 log = logging.getLogger('adsg.opt')
 
 
-class StochasticDSGEvaluator(DSGEvaluator):
+class DSGStochasticEvaluator(DSGEvaluator):
     """
     Base class for implementing an evaluator for stochastic problem that directly evaluates DSG instances.
     Override _evaluate_sample to implement the evaluation.
@@ -87,9 +87,6 @@ class StochasticDSGEvaluator(DSGEvaluator):
 
     def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, EvaluationOutput]:
         """
-        Implement this function to provide stochastic DSG evaluation .
-        Override this function if external UQ tool is linked.
-
         Implement _evaluate_sample with evaluation code for each realized sample stored on DSG.
         """
         # Sample the stochastic parameters
@@ -148,4 +145,4 @@ class StochasticDSGEvaluator(DSGEvaluator):
         """
         raise NotImplementedError
 
-StochasticADSGEvaluator = StochasticDSGEvaluator
+StochasticADSGEvaluator = DSGStochasticEvaluator

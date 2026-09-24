@@ -19,12 +19,12 @@ def _dsg_with_parameters(n, par_nodes):
     return dsg.set_start_nodes({n[0]})
 
 
-def _evaluator(dsg, n_evaluations=5, seed=42) -> 'StochasticDSGEvaluator':
-    class _Evaluator(StochasticDSGEvaluator):
+def _evaluator(dsg, n_evaluations=5, seed=42) -> 'DSGStochasticEvaluator':
+    class _Stochastic_Evaluator(DSGStochasticEvaluator):
         def _evaluate_sample(self, dsg_instance, metric_nodes):
             return {}
 
-    return _Evaluator(dsg, uq_method=MonteCarlo(n_evaluations, seed=seed))
+    return _Stochastic_Evaluator(dsg, uq_method=MonteCarlo(n_evaluations, seed=seed))
 
 
 def _dsg_with_branch_parameters(n, common, only_a, only_b):
@@ -34,7 +34,7 @@ def _dsg_with_branch_parameters(n, common, only_a, only_b):
     return dsg.set_start_nodes({n[0]})
 
 
-class BeamEvaluator(StochasticDSGEvaluator):
+class BeamStochasticEvaluator(DSGStochasticEvaluator):
     """Pick a material and a thickness for a beam under an uncertain load.
 
     material: steel (stiff, heavy) or alu; t: continuous thickness. The stiffness parameter is branch-local, so
@@ -120,12 +120,12 @@ class BeamEvaluator(StochasticDSGEvaluator):
 
 @pytest.fixture
 def beam():
-    return BeamEvaluator()
+    return BeamStochasticEvaluator()
 
 
 @pytest.fixture
 def constrained_beam():
-    return BeamEvaluator(stress_ref=60.)
+    return BeamStochasticEvaluator(stress_ref=60.)
 
 
 def test_input_parameter_node(n):
@@ -396,9 +396,9 @@ def test_problem_evaluation_and_statistics(beam):
 
 
 def test_problem_scalars_take_effect():
-    evaluator = BeamEvaluator(stress_ref=60.,
-                              obj_scalar=[Mean(), Margin(k=2.), Mean()],
-                              constr_scalar=[Quantile(q=.9)])
+    evaluator = BeamStochasticEvaluator(stress_ref=60.,
+                                        obj_scalar=[Mean(), Margin(k=2.), Mean()],
+                                        constr_scalar=[Quantile(q=.9)])
     problem = evaluator.get_problem()
     out = problem.evaluate(np.array([[0, 3.]]), return_as_dictionary=True)
     deflection, stress = out['f_stochastic'][0, 1], out['g_stochastic'][0, 0]
@@ -431,9 +431,9 @@ def test_problem_uses_common_random_numbers_and_one_graph_per_point(beam):
 @pytest.mark.parametrize('parallel_processes', [True, False])
 def test_problem_evaluates_in_parallel(parallel_processes):
     x = np.array([[0, 2.], [1, 4.], [0, 3.], [1, 2.5]])
-    f_serial = BeamEvaluator().get_problem().evaluate(x, return_as_dictionary=True)['F']
+    f_serial = BeamStochasticEvaluator().get_problem().evaluate(x, return_as_dictionary=True)['F']
 
-    problem = BeamEvaluator().get_problem(n_parallel=2, parallel_processes=parallel_processes)
+    problem = BeamStochasticEvaluator().get_problem(n_parallel=2, parallel_processes=parallel_processes)
     out = problem.evaluate(x, return_as_dictionary=True)
 
     assert problem.get_n_batch_evaluate() == 2
@@ -442,7 +442,7 @@ def test_problem_evaluates_in_parallel(parallel_processes):
 
 
 def test_problem_with_polynomial_chaos():
-    evaluator = BeamEvaluator(uq_method=PolynomialChaos(40, seed=42, degree=2))
+    evaluator = BeamStochasticEvaluator(uq_method=PolynomialChaos(40, seed=42, degree=2))
     out = evaluator.get_problem().evaluate(np.array([[0, 2.]]), return_as_dictionary=True)
 
     assert np.all(np.isfinite(out['F']))
@@ -455,9 +455,9 @@ def test_problem_with_polynomial_chaos():
 
 
 def test_uav_example():
-    from adsg_core.examples.robust_uav import RobustUAVEvaluator
+    from adsg_core.examples.robust_uav import RobustUAVStochasticEvaluator
 
-    evaluator = RobustUAVEvaluator(MonteCarlo(25, seed=42), k=2.)
+    evaluator = RobustUAVStochasticEvaluator(MonteCarlo(25, seed=42), k=2.)
     assert set(evaluator.param_space.parameter_names) == {'bsfc', 'drag_factor', 'eta_bat', 'headwind'}
     assert not evaluator.par_payload.is_stochastic
 
@@ -483,9 +483,9 @@ def test_uav_example():
 
 
 def test_uav_example_statistics_helper():
-    from adsg_core.examples.robust_uav import RobustUAVEvaluator
+    from adsg_core.examples.robust_uav import RobustUAVStochasticEvaluator
 
-    evaluator = RobustUAVEvaluator(MonteCarlo(25, seed=1), k=2.)
+    evaluator = RobustUAVStochasticEvaluator(MonteCarlo(25, seed=1), k=2.)
     dsg, _, _ = evaluator.get_graph(evaluator.get_random_design_vector())
     statistics = evaluator.evaluate_statistics(dsg)
 

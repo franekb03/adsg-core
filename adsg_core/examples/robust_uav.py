@@ -29,11 +29,11 @@ from typing import *
 from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_basic import *
 from adsg_core.graph.adsg_nodes import *
-from adsg_core.optimization.stochastic_evaluator import StochasticDSGEvaluator
+from adsg_core.optimization.stochastic_evaluator import DSGStochasticEvaluator
 from sb_arch_opt.uncertainty import MonteCarlo, UQMethod, Mean, Margin
 from sb_arch_opt.algo.pymoo_interface import plot
 
-__all__ = ['RobustUAVEvaluator', 'UAVOptionNode', 'run_sbo']
+__all__ = ['RobustUAVStochasticEvaluator', 'UAVOptionNode', 'run_sbo']
 
 GRAVITY = 9.81
 RHO_SL = 1.225  # Sea-level air density [kg/m3]
@@ -51,7 +51,7 @@ class UAVOptionNode(NamedNode):
         return f'{self.decision} = {self.value}'
 
 
-class RobustUAVEvaluator(StochasticDSGEvaluator):
+class RobustUAVStochasticEvaluator(DSGStochasticEvaluator):
     """
     Robust design of a multirotor UAV, as an example of architecture optimization under uncertainty.
 
@@ -356,7 +356,7 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
     if seed is not None:
         np.random.seed(seed)
 
-    evaluator = RobustUAVEvaluator(uq, k=k, objective=objective)
+    evaluator = RobustUAVStochasticEvaluator(uq, k=k, objective=objective)
 
     # One seeded draw of the uncertain parameters is reused for every design point (common random numbers), so
     # that design points are comparable to each other and the surrogate sees a smooth response
@@ -392,7 +392,7 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
 
 if __name__ == '__main__':
     uq = MonteCarlo(n_evaluations=100, seed=42)
-    evaluator = RobustUAVEvaluator(uq, k=2, objective=None)
+    evaluator = RobustUAVStochasticEvaluator(uq, k=2, objective=None)
     x = evaluator.get_random_design_vector()
     dsg, _, _ = evaluator.get_graph(x)
     result = evaluator.evaluate(dsg)
