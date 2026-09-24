@@ -30,7 +30,7 @@ from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_basic import *
 from adsg_core.graph.adsg_nodes import *
 from adsg_core.optimization.stochastic_evaluator import DSGStochasticEvaluator
-from sb_arch_opt.uncertainty import MonteCarlo, UQMethod, Mean, Margin
+from sb_arch_opt.uncertainty import UQMethod, Mean, Margin, PolynomialChaos
 from sb_arch_opt.algo.pymoo_interface import plot
 
 __all__ = ['RobustUAVStochasticEvaluator', 'UAVOptionNode', 'run_sbo']
@@ -54,11 +54,6 @@ class UAVOptionNode(NamedNode):
 class RobustUAVStochasticEvaluator(DSGStochasticEvaluator):
     """
     Robust design of a multirotor UAV, as an example of architecture optimization under uncertainty.
-
-    The design space mixes categorical, ordinal and continuous variables, and is *hierarchical*: which variables
-    exist at all depends on the architectural choices made higher up. Performance depends on a handful of
-    uncertain parameters, so every design point the optimizer visits is assessed by propagating those parameters
-    through the model instead of by a single deterministic run.
 
     Design variables (13 total, 9 active in any one architecture):
 
@@ -87,14 +82,6 @@ class RobustUAVStochasticEvaluator(DSGStochasticEvaluator):
     - `drag_factor`: airframe drag scatter [-], always present
     - `eta_bat`: battery + motor efficiency [-], only in the electric architecture
     - `bsfc`: brake specific fuel consumption [kg/kWh], only in the hybrid architecture
-
-    Note the parameter *nodes* carry no value: the distribution is set on the graph, so that a derived instance
-    exposes exactly the parameters its architecture has (`dsg.stochastic_space`).
-
-    The hybrid architecture reaches a higher *mean* endurance, but its fuel consumption is far more uncertain
-    (~18% coefficient of variation, against ~3% for the electric efficiency). Increasing the margin factor `k`
-    therefore shifts the preferred architecture towards electric: the robust optimum is not the deterministic
-    optimum, which is the whole point of the example.
 
     Metrics:
 
@@ -150,7 +137,7 @@ class RobustUAVStochasticEvaluator(DSGStochasticEvaluator):
         # Uncertain parameters: three always present, two conditional on the selected powertrain. The nodes are
         # identities only - the distributions are attached to the graph in get_dsg().
         self.par_payload = InputParameterNode('payload', 2.0)
-        self.par_headwind = InputParameterNode('headwind', ot.Uniform(4., 10.))
+        self.par_headwind = InputParameterNode('headwind', ot.Normal(10., 2.))
         self.par_drag = InputParameterNode('drag_factor', ot.Normal(1., .08))
         self.par_eta_bat = InputParameterNode('eta_bat', ot.Normal(.92, .03))
         self.par_bsfc = InputParameterNode('bsfc', ot.Normal(.42, .075))
@@ -343,12 +330,6 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
             seed: int = None, verbose: bool = True):
     """
     Optimize the robust UAV problem with SBArchOpt's Surrogate-Based Optimization (SBO).
-
-    SBO is the right tool here: every design point costs a full uncertainty propagation, so the number of
-    evaluations must be kept low. The surrogate is built over the mixed-discrete hierarchical design space,
-    which SBArchOpt handles natively through the DSGDesignSpace exposed by `get_problem()`.
-
-    Ensure the optional dependencies are installed: `pip install sb-arch-opt[arch_sbo]`
     """
     from pymoo.optimize import minimize
     from sb_arch_opt.algo.arch_sbo import get_arch_sbo_gp
@@ -358,10 +339,7 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
 
     evaluator = RobustUAVStochasticEvaluator(uq, k=k, objective=objective)
 
-    # One seeded draw of the uncertain parameters is reused for every design point (common random numbers), so
-    # that design points are comparable to each other and the surrogate sees a smooth response
     problem = evaluator.get_problem(n_parallel=4)
-
     problem.print_stats()
 
     sbo = get_arch_sbo_gp(problem, init_size=init_size)
@@ -374,6 +352,7 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
     # Print results
     opt = result.opt
     print('Best f:', opt.get('F')[0])
+    print('Best dist:', list(opt.get('f_stochastic')[0]))
     print('Best x:', list(opt.get('X')[0]))
 
     if verbose:
@@ -389,18 +368,15 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
     return evaluator, problem, result
 
 
-
 if __name__ == '__main__':
-    uq = MonteCarlo(n_evaluations=100, seed=42)
+    uq = PolynomialChaos(n_evaluations=70, seed=42, degree=3, n_metamodel_samples=1000)
     evaluator = RobustUAVStochasticEvaluator(uq, k=2, objective=None)
     x = evaluator.get_random_design_vector()
     dsg, _, _ = evaluator.get_graph(x)
     result = evaluator.evaluate(dsg)
     print(result)
     dsg_all = evaluator.get_dsg()
-    # dsg_all.render()
-    # dsg.render()
-
-
+    dsg_all.render()
+    dsg.render()
 
     run_sbo(uq, n_infill=20, init_size=40, k=3, objective=None, seed=42, verbose=True)
