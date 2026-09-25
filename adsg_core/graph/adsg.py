@@ -24,7 +24,6 @@ SOFTWARE.
 """
 import numpy as np
 import openturns as ot
-import warnings
 from typing import *
 import networkx as nx
 from natsort import natsorted
@@ -36,19 +35,7 @@ from adsg_core.graph.choices import *
 from adsg_core.graph.incompatibility import *
 from adsg_core.graph.influence_matrix import *
 from adsg_core.graph.choice_constraints import *
-
-try:
-    from sb_arch_opt.uncertainty import EvaluationOutput
-    from sb_arch_opt.sampling import TrailRepairWarning
-    warnings.simplefilter("ignore", category=TrailRepairWarning)
-
-except ImportError:
-
-    class StochasticOutput:
-        pass
-
-    EvaluationOutput = Union[StochasticOutput, float]
-    """Output either distribution or numeric value."""
+from sb_arch_opt.uncertainty import EvaluationOutput
 
 __all__ = ['DSG', 'EdgeType', 'CDVNode', 'ChoiceConstraint', 'ChoiceConstraintType', 'DSGType', 'ADSG', 'ADSGType']
 

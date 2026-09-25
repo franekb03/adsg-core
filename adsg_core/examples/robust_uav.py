@@ -29,41 +29,12 @@ from typing import *
 from adsg_core.graph.adsg_basic import *
 from adsg_core.graph.adsg_nodes import *
 from adsg_core.optimization.stochastic_evaluator import DSGStochasticEvaluator
+from sb_arch_opt.uncertainty import UQMethod, Mean, Margin, PolynomialChaos
+from sb_arch_opt.algo.pymoo_interface import plot
+from pymoo.optimize import minimize
+from sb_arch_opt.algo.arch_sbo import get_arch_sbo_gp
 
-
-try:
-    from sb_arch_opt.uncertainty import UQMethod, Mean, Margin, PolynomialChaos
-    from sb_arch_opt.algo.pymoo_interface import plot
-    from pymoo.optimize import minimize
-    from sb_arch_opt.algo.arch_sbo import get_arch_sbo_gp
-    from sb_arch_opt.sampling import TrailRepairWarning
-
-    warnings.simplefilter("ignore", category=TrailRepairWarning)
-
-    HAS_SB_ARCH_OPT = True
-
-except ImportError:
-
-    HAS_SB_ARCH_OPT = False
-
-    class UQMethod:
-        pass
-
-    class Mean:
-        pass
-
-    class Margin:
-        pass
-
-    class PolynomialChaos:
-        pass
-
-__all__ = ['RobustUAVStochasticEvaluator', 'UAVOptionNode', 'run_sbo', 'check_dependency']
-
-
-def check_dependency():
-    if not HAS_SB_ARCH_OPT:
-        raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt[uncertainty]')
+__all__ = ['RobustUAVStochasticEvaluator', 'UAVOptionNode', 'run_sbo']
 
 
 GRAVITY = 9.81
@@ -162,9 +133,6 @@ class RobustUAVStochasticEvaluator(DSGStochasticEvaluator):
         :param k: margin factor; the robust endurance is `mean - k*std`
         :param objective: 0 for endurance only, 1 for mass only, None for both
         """
-
-        check_dependency()
-
         self.k = k
         self.uq_method = uq_method
 
@@ -401,7 +369,6 @@ def run_sbo(uq: UQMethod, n_infill: int = 20, init_size: int = 40, k: float = 2.
 
 
 if __name__ == '__main__':
-    check_dependency()
     uq = PolynomialChaos(n_evaluations=70, seed=42, degree=3, n_metamodel_samples=1000)
     evaluator = RobustUAVStochasticEvaluator(uq, k=2, objective=None)
     x = evaluator.get_random_design_vector()

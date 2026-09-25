@@ -22,7 +22,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-import logging
 import numpy as np
 import warnings
 from typing import *
@@ -36,25 +35,7 @@ from adsg_core.optimization.assign_enc.encoding import Encoder
 from adsg_core.optimization.assign_enc.selector import EncoderSelector
 from adsg_core.optimization.assign_enc.time_limiter import run_timeout
 from adsg_core.optimization.assign_enc.assignment_manager import AssignmentManagerBase
-
-try:
-    from sb_arch_opt.uncertainty import EvaluationOutput, StochasticOutput, StochasticParameter, StochasticParameterSpace
-    from sb_arch_opt.sampling import TrailRepairWarning
-    warnings.simplefilter("ignore", category=TrailRepairWarning)
-
-except ImportError:
-
-    class StochasticOutput:
-        pass
-
-    EvaluationOutput = Union[StochasticOutput, float]
-    """Output either distribution or numeric value."""
-
-    class StochasticParameter:
-        pass
-
-    class StochasticParameterSpace:
-        pass
+from sb_arch_opt.uncertainty import EvaluationOutput, StochasticParameter, StochasticParameterSpace
 
 __all__ = ['GraphProcessor', 'MetricType', 'SelChoiceEncoderType']
 
