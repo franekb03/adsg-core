@@ -87,7 +87,7 @@ class RobustUAVStochasticEvaluator(DSGStochasticEvaluator):
 
     Metrics:
 
-    - `endurance` [min]: maximized, stochastic, reduced with `Margin(k=-k)`, i.e. `mean - k*std` (the sign is
+    - `endurance` [min]: maximized, stochastic, reduced with `Margin(k=k)`, i.e. `mean - k*std` (the sign is
       negative because the scalar is applied to the physical samples of a *maximized* quantity)
     - `mass` [kg]: minimized, evaluated at the mean payload so it has no scatter of its own
 
