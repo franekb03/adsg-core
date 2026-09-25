@@ -45,12 +45,13 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
 
     Parallel processing is possible by setting `n_parallel` to a number higher than 1.
 
+    By default, assumes parallel processing is done within the thread and therefore starts a multiprocessing pool to
+    run the parallel evaluations.
+
     `Margin` and `Quantile` scalarizations are applied in the direction of each metric, so that they always select the
     unfavorable side of the output distribution: for a maximized objective or a greater-than constraint, `Margin(k)`
     gives `mean - k*std` and `Quantile(q)` gives the `1-q` quantile. The `direction` of a given `Margin` is therefore
     overwritten. Custom scalarizations receive the output as is, and should take the metric direction into account.
-    By default, assumes parallel processing is done within the thread and therefore starts a multiprocessing pool to
-    run the parallel evaluations.
 
     Ensure SBArchOpt is installed with uncertainty package: `pip install sb-arch-opt[uncertainty]`
 
