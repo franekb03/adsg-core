@@ -57,7 +57,7 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
     evaluator = ...  # Instance of DSGStochasticEvaluator
 
     algorithm = get_nsga2(pop_size=100)
-    problem = DSGStochasticArchOptProblem(evaluator, uq_method)
+    problem = DSGStochasticArchOptProblem(evaluator, param_space, uq_method)
 
     result = minimize(problem, algorithm, termination=('n_eval', 500))
     ```
@@ -105,6 +105,7 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
 
         # Evaluate architectures for each DSG instance
         if self.n_parallel is not None and self.n_parallel > 1:
+            self.uq_method.get_samples(self.param_space) # Get samples, so that same seed is used for parallel execution
             executor_class = ProcessPoolExecutor if self.parallel_processes else ThreadPoolExecutor
             with executor_class(max_workers=self.n_parallel) as executor:
                 futures = [executor.submit(self.evaluator.evaluate, dsg) for dsg in dsg_instances]

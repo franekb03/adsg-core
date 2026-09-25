@@ -65,17 +65,10 @@ class DSGStochasticEvaluator(DSGEvaluator):
                                            n_parallel=n_parallel, parallel_processes=parallel_processes)
 
     def _set_param_realizations(self, dsg, param_nodes: List[InputParameterNode], samples: np.ndarray, i_realization: int):
-        stochastic_realization = self.param_space.param_realization(samples, i_realization)
-        name_list = {param.ref: param for param in stochastic_realization}
-        for param in self.inp_params:
-            if param.node in param_nodes:
-                stoch_param = name_list.get(param.node)
-                if stoch_param is None:
-                    # If deterministic use fixed value stored on the node
-                    dsg.set_inp_param_value(param.node, param.node.value)
-                else:
-                    # If stochastic use sample realization that was computed with UQ method
-                    dsg.set_inp_param_value(param.node, stoch_param.sample)
+        realized = {param.ref: param.sample for param in self.param_space.param_realization(samples, i_realization)}
+        for node in param_nodes:
+            # Stochastic parameters get their realization, deterministic ones keep their fixed value
+            dsg.set_inp_param_value(node, realized.get(node, node.value))
 
     def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, EvaluationOutput]:
         """
