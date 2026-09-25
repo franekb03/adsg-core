@@ -26,12 +26,13 @@ import warnings
 from typing import *
 
 __all__ = ['HAS_SB_ARCH_OPT', 'check_dependency', 'EvaluationOutput', 'Scalarization', 'StochasticArchOptProblem',
-           'StochasticOutput', 'StochasticParameter', 'StochasticParameterSpace', 'UQMethod']
+           'StochasticOutput', 'StochasticParameter', 'StochasticParameterSpace', 'UQMethod', 'MonteCarlo', 'PolynomialChaos',
+           'Mean', 'Margin', 'Quantile']
 
 try:
     from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
     from sb_arch_opt.uncertainty import (Scalarization, StochasticOutput, StochasticParameter, StochasticParameterSpace,
-                                         UQMethod, MonteCarlo, PolynomialChaos, Mean, Margin)
+                                         UQMethod, MonteCarlo, PolynomialChaos, Mean, Margin, Quantile)
     from sb_arch_opt.sampling import TrailRepairWarning
 
     warnings.simplefilter('ignore', category=TrailRepairWarning)
@@ -82,6 +83,9 @@ except ImportError:
 
 
     class Margin:
+        pass
+
+    class Quantile:
         pass
 
 

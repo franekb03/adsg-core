@@ -22,18 +22,45 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-import logging
+import warnings
 import numpy as np
 from typing import *
 from concurrent.futures import wait, ProcessPoolExecutor, ThreadPoolExecutor
 
 from adsg_core.optimization.stochastic_evaluator import  DSGStochasticEvaluator
 from adsg_core.optimization.problem import DSGDesignSpace
-from adsg_core.uncertainty import HAS_SB_ARCH_OPT, check_dependency, Scalarization, StochasticArchOptProblem, StochasticParameterSpace, UQMethod
+
+try:
+    from sb_arch_opt.uncertainty import Scalarization, StochasticParameterSpace, UQMethod
+    from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
+    from sb_arch_opt.sampling import TrailRepairWarning
+
+    warnings.simplefilter("ignore", category=TrailRepairWarning)
+
+    HAS_SB_ARCH_OPT = True
+
+except ImportError:
+
+    HAS_SB_ARCH_OPT = False
+
+    class Scalarization:
+        pass
+
+    class StochasticParameterSpace:
+        pass
+
+    class UQMethod:
+        pass
+
+    class StochasticArchOptProblem:
+        pass
 
 __all__ = ['check_dependency', 'DSGStochasticArchOptProblem', 'HAS_SB_ARCH_OPT', 'ADSGStochasticArchOptProblem']
 
-log = logging.getLogger('adsg.opt')
+
+def check_dependency():
+    if not HAS_SB_ARCH_OPT:
+        raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt[uncertainty]')
 
 
 class DSGStochasticArchOptProblem(StochasticArchOptProblem):
@@ -71,6 +98,7 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
                  obj_scalar: Optional[List[Scalarization]] = None,
                  constr_scalar: Optional[List[Scalarization]] = None,
                  n_parallel=None, parallel_processes=True):
+
         check_dependency()
 
         self.evaluator = evaluator

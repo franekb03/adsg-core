@@ -24,7 +24,7 @@ SOFTWARE.
 """
 import logging
 import numpy as np
-import openturns as ot
+import warnings
 from typing import *
 from adsg_core.graph.adsg_nodes import *
 from adsg_core.optimization.dv_output_defs import *
@@ -36,11 +36,27 @@ from adsg_core.optimization.assign_enc.encoding import Encoder
 from adsg_core.optimization.assign_enc.selector import EncoderSelector
 from adsg_core.optimization.assign_enc.time_limiter import run_timeout
 from adsg_core.optimization.assign_enc.assignment_manager import AssignmentManagerBase
-from adsg_core.uncertainty import HAS_SB_ARCH_OPT, check_dependency, EvaluationOutput, StochasticParameter, StochasticParameterSpace
 
-__all__ = ['GraphProcessor', 'MetricType', 'SelChoiceEncoderType', 'HAS_SB_ARCH_OPT', 'check_dependency']
+try:
+    from sb_arch_opt.uncertainty import EvaluationOutput, StochasticOutput, StochasticParameter, StochasticParameterSpace
+    from sb_arch_opt.sampling import TrailRepairWarning
+    warnings.simplefilter("ignore", category=TrailRepairWarning)
 
-log = logging.getLogger('adsg.opt')
+except ImportError:
+
+    class StochasticOutput:
+        pass
+
+    EvaluationOutput = Union[StochasticOutput, float]
+    """Output either distribution or numeric value."""
+
+    class StochasticParameter:
+        pass
+
+    class StochasticParameterSpace:
+        pass
+
+__all__ = ['GraphProcessor', 'MetricType', 'SelChoiceEncoderType']
 
 
 def catch_memory_overflow(func):

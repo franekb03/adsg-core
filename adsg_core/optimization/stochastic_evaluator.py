@@ -22,7 +22,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-import logging
 import math
 from typing import *
 import warnings
@@ -31,11 +30,37 @@ from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_nodes import MetricNode, InputParameterNode
 from adsg_core.optimization.evaluator import DSGEvaluator
 from adsg_core.optimization.graph_processor import *
-from adsg_core.uncertainty import HAS_SB_ARCH_OPT, check_dependency, EvaluationOutput, Scalarization, UQMethod
 
 __all__ = ['DSGStochasticEvaluator', 'StochasticADSGEvaluator', 'HAS_SB_ARCH_OPT', 'check_dependency']
 
-log = logging.getLogger('adsg.opt')
+try:
+    from sb_arch_opt.uncertainty import EvaluationOutput, Scalarization, UQMethod
+    from sb_arch_opt.sampling import TrailRepairWarning
+
+    warnings.simplefilter("ignore", category=TrailRepairWarning)
+
+    HAS_SB_ARCH_OPT = True
+
+except ImportError:
+
+    HAS_SB_ARCH_OPT = False
+
+    class StochasticOutput:
+        pass
+
+    EvaluationOutput = Union[StochasticOutput, float]
+    """Output either distribution or numeric value."""
+
+    class Scalarization:
+        pass
+
+    class UQMethod:
+        pass
+
+
+def check_dependency():
+    if not HAS_SB_ARCH_OPT:
+        raise ImportError('Looks like SBArchOpt is not installed! Run: pip install sb-arch-opt[uncertainty]')
 
 
 class DSGStochasticEvaluator(DSGEvaluator):
@@ -53,6 +78,7 @@ class DSGStochasticEvaluator(DSGEvaluator):
                  constr_scalar: Optional[List[Scalarization]] = None,
                  **kwargs):
 
+        check_dependency()
         self.uq_method = uq_method
         self.obj_scalar = obj_scalar
         self.constr_scalar = constr_scalar

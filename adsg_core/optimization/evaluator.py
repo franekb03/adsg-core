@@ -23,12 +23,25 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 import math
+import warnings
 from typing import *
 from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_nodes import MetricNode
 from adsg_core.optimization.dv_output_defs import *
 from adsg_core.optimization.graph_processor import *
-from adsg_core.uncertainty import EvaluationOutput
+
+try:
+    from sb_arch_opt.uncertainty import EvaluationOutput, StochasticOutput
+    from sb_arch_opt.sampling import TrailRepairWarning
+    warnings.simplefilter("ignore", category=TrailRepairWarning)
+
+except ImportError:
+
+    class StochasticOutput:
+        pass
+
+    EvaluationOutput = Union[StochasticOutput, float]
+    """Output either distribution or numeric value."""
 
 __all__ = ['DSGEvaluator', 'ADSGEvaluator']
 
