@@ -22,13 +22,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+import copy
 import warnings
 import numpy as np
 from typing import *
 from concurrent.futures import wait, ProcessPoolExecutor, ThreadPoolExecutor
 from adsg_core.optimization.stochastic_evaluator import  DSGStochasticEvaluator
 from adsg_core.optimization.problem import DSGDesignSpace
-from sb_arch_opt.uncertainty import Scalarization, StochasticParameterSpace, UQMethod
+from sb_arch_opt.uncertainty import Scalarization, Margin, Quantile, StochasticParameterSpace, UQMethod
 from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
 
 __all__ = ['DSGStochasticArchOptProblem', 'ADSGStochasticArchOptProblem']
@@ -43,6 +44,11 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
     running a stochastic DSG architecture optimization problem.
 
     Parallel processing is possible by setting `n_parallel` to a number higher than 1.
+
+    `Margin` and `Quantile` scalarizations are applied in the direction of each metric, so that they always select the
+    unfavorable side of the output distribution: for a maximized objective or a greater-than constraint, `Margin(k)`
+    gives `mean - k*std` and `Quantile(q)` gives the `1-q` quantile. The `direction` of a given `Margin` is therefore
+    overwritten. Custom scalarizations receive the output as is, and should take the metric direction into account.
     By default, assumes parallel processing is done within the thread and therefore starts a multiprocessing pool to
     run the parallel evaluations.
 
@@ -85,6 +91,23 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
         self.obj_is_max = [obj.dir.value > 0 for obj in evaluator.objectives]
         self.con_ref = [(con.dir.value > 0, con.ref) for con in evaluator.constraints]
 
+        # Values are negated for maximization only after scalarization, so the scalars themselves follow the direction
+        self.obj_scalar = [self._orient_scalar(scalar, is_max)
+                           for scalar, is_max in zip(self.obj_scalar, self.obj_is_max)]
+        self.ieq_constr_scalar = [self._orient_scalar(scalar, is_gte)
+                                  for scalar, (is_gte, _) in zip(self.ieq_constr_scalar, self.con_ref)]
+
+    @staticmethod
+    def _orient_scalar(scalar: Scalarization, is_max: bool) -> Scalarization:
+        """Get the scalar that selects the unfavorable side of the output of a minimized or maximized metric"""
+        if isinstance(scalar, Margin):
+            scalar = copy.copy(scalar)
+            scalar.direction = 1 if is_max else -1
+        elif isinstance(scalar, Quantile) and is_max:
+            scalar = copy.copy(scalar)
+            scalar.q = 1.-scalar.q
+        return scalar
+
     def _arch_evaluate(self, x: np.ndarray, is_active_out: np.ndarray, f_out: np.ndarray, g_out: np.ndarray, h_out: np.ndarray, *args,
                        f_stoch_out: np.ndarray=None, g_stoch_out: np.ndarray=None, h_stoch_out: np.ndarray=None, **kwargs):
         """
@@ -105,7 +128,9 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
 
         # Evaluate architectures for each DSG instance
         if self.n_parallel is not None and self.n_parallel > 1:
-            self.uq_method.get_samples(self.param_space) # Get samples, so that same seed is used for parallel execution
+            # Draw the samples before dispatching: threads then share them, and processes receive them with the
+            # evaluator, so all design points see the same realizations
+            self.evaluator.uq_method.get_samples(self.evaluator.param_space)
             executor_class = ProcessPoolExecutor if self.parallel_processes else ThreadPoolExecutor
             with executor_class(max_workers=self.n_parallel) as executor:
                 futures = [executor.submit(self.evaluator.evaluate, dsg) for dsg in dsg_instances]

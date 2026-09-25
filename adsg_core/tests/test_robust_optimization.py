@@ -362,6 +362,22 @@ def test_problem_scalars_take_effect():
     assert out['G'][0, 0] != pytest.approx(Mean().scalarize(stress) - 60.)
 
 
+@pytest.mark.parametrize('scalar', [Margin(k=2.), Quantile(q=.9)])
+def test_scalars_penalize_spread_of_maximized_metrics(scalar):
+    given = dict(scalar.__dict__)
+    evaluator = BeamStochasticEvaluator(stress_ref=60., obj_scalar=[scalar, Mean(), Mean()], constr_scalar=[scalar])
+    problem = evaluator.get_problem()
+    out = problem.evaluate(np.array([[0, 3.]]), return_as_dictionary=True)
+    capacity = out['f_stochastic'][0, 0]
+
+    # capacity is maximized, so its value is negated: the unfavorable side of its distribution is below the mean
+    assert -out['F'][0, 0] < capacity.mean
+    # stress must stay below its reference, so the unfavorable side is above the mean
+    assert out['G'][0, 0] + 60. > out['g_stochastic'][0, 0].mean
+
+    assert scalar.__dict__ == given  # the given scalar itself is not modified
+
+
 def test_problem_uses_common_random_numbers_and_one_graph_per_point(beam):
     problem = beam.get_problem()
     n_calls, original = [0], beam.get_graph
@@ -443,3 +459,16 @@ def test_uav_example_statistics_helper():
     assert statistics['endurance_std'] > 0.
     assert statistics['endurance_robust'] < statistics['endurance_mean']
     assert statistics['mass'] > 0.
+
+def test_polynomial_chaos_in_parallel_processes():
+    x = np.array([[1, 2.], [1, 2.], [0, 2.], [0, 2.]])
+    f_serial = BeamStochasticEvaluator(uq_method=PolynomialChaos(20, seed=42, degree=2)).get_problem() \
+        .evaluate(x, return_as_dictionary=True)['F']
+
+    problem = BeamStochasticEvaluator(uq_method=PolynomialChaos(20, seed=42, degree=2)) \
+        .get_problem(n_parallel=3, parallel_processes=True)
+    f_parallel = problem.evaluate(x, return_as_dictionary=True)['F']
+
+    # Each worker evaluates the expansion on the same input sample, so identical design points agree
+    assert f_parallel[0] == pytest.approx(f_parallel[1])
+    assert f_parallel == pytest.approx(f_serial)

@@ -87,8 +87,8 @@ class RobustUAVStochasticEvaluator(DSGStochasticEvaluator):
 
     Metrics:
 
-    - `endurance` [min]: maximized, stochastic, reduced with `Margin(k=-k)`, i.e. `mean - k*std` (the sign is
-      negative because the scalar is applied to the physical samples of a *maximized* quantity)
+    - `endurance` [min]: maximized, stochastic, reduced with `Margin(k)`, i.e. `mean - k*std` (the problem applies the
+      margin on the unfavorable side, which for a *maximized* quantity is below the mean)
     - `mass` [kg]: minimized, evaluated at the mean payload so it has no scatter of its own
 
     Ensure the optional dependencies are installed: `pip install sb-arch-opt[arch_sbo]`
@@ -147,7 +147,7 @@ class RobustUAVStochasticEvaluator(DSGStochasticEvaluator):
         self.metric_node_map: Dict[str, MetricNode] = {}
         self.option_nodes: Dict[str, List[UAVOptionNode]] = {}
 
-        obj_scalar = [Margin(k=self.k, direction=1), Mean()]
+        obj_scalar = [Margin(k=self.k), Mean()]
 
         super().__init__(self.get_dsg(objective=objective), uq_method=uq_method, obj_scalar=obj_scalar)
 

@@ -24,6 +24,7 @@ SOFTWARE.
 """
 import math
 from typing import *
+from cached_property import cached_property
 import numpy as np
 from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_nodes import MetricNode, InputParameterNode
@@ -65,10 +66,16 @@ class DSGStochasticEvaluator(DSGEvaluator):
                                            n_parallel=n_parallel, parallel_processes=parallel_processes)
 
     def _set_param_realizations(self, dsg, param_nodes: List[InputParameterNode], samples: np.ndarray, i_realization: int):
-        realized = {param.ref: param.sample for param in self.param_space.param_realization(samples, i_realization)}
+        i_columns = self._param_sample_columns
         for node in param_nodes:
             # Stochastic parameters get their realization, deterministic ones keep their fixed value
-            dsg.set_inp_param_value(node, realized.get(node, node.value))
+            i_col = i_columns.get(node)
+            dsg.set_inp_param_value(node, node.value if i_col is None else float(samples[i_realization, i_col]))
+
+    @cached_property
+    def _param_sample_columns(self) -> Dict[InputParameterNode, int]:
+        """Sample column of each stochastic parameter node"""
+        return {param.ref: i_col for i_col, param in enumerate(self.param_space.parameters)}
 
     def _evaluate(self, dsg: DSGType, metric_nodes: List[MetricNode]) -> Dict[MetricNode, EvaluationOutput]:
         """
