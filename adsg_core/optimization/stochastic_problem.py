@@ -29,7 +29,7 @@ from typing import *
 from concurrent.futures import wait, ProcessPoolExecutor, ThreadPoolExecutor
 from adsg_core.optimization.stochastic_evaluator import  DSGStochasticEvaluator
 from adsg_core.optimization.problem import DSGDesignSpace
-from sb_arch_opt.uncertainty import Scalarization, Margin, Quantile, StochasticParameterSpace, UQMethod
+from sb_arch_opt.uncertainty import Scalarization, StochasticParameterSpace, UQMethod, Margin, Quantile
 from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
 
 __all__ = ['DSGStochasticArchOptProblem', 'ADSGStochasticArchOptProblem']
@@ -105,7 +105,7 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
             scalar.direction = 1 if is_max else -1
         elif isinstance(scalar, Quantile) and is_max:
             scalar = copy.copy(scalar)
-            scalar.q = 1.-scalar.q
+            scalar.q = 1. - scalar.q
         return scalar
 
     def _arch_evaluate(self, x: np.ndarray, is_active_out: np.ndarray, f_out: np.ndarray, g_out: np.ndarray, h_out: np.ndarray, *args,

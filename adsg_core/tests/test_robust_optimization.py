@@ -460,6 +460,18 @@ def test_uav_example_statistics_helper():
     assert statistics['endurance_robust'] < statistics['endurance_mean']
     assert statistics['mass'] > 0.
 
+
+def test_in_parallel_processes():
+    x = np.array([[1, 2.], [1, 2.], [0, 2.], [0, 2.]])
+
+    problem = BeamStochasticEvaluator(uq_method=MonteCarlo(25, seed=42)) \
+        .get_problem(n_parallel=3, parallel_processes=True)
+    f_parallel = problem.evaluate(x, return_as_dictionary=True)['F']
+
+    # Each worker uses the same realizations, so identical design points agree
+    assert f_parallel[0] == pytest.approx(f_parallel[1])
+
+
 def test_polynomial_chaos_in_parallel_processes():
     x = np.array([[1, 2.], [1, 2.], [0, 2.], [0, 2.]])
     f_serial = BeamStochasticEvaluator(uq_method=PolynomialChaos(20, seed=42, degree=2)).get_problem() \
