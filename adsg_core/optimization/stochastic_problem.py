@@ -44,7 +44,6 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
     running a stochastic DSG architecture optimization problem.
 
     Parallel processing is possible by setting `n_parallel` to a number higher than 1.
-
     By default, assumes parallel processing is done within the thread and therefore starts a multiprocessing pool to
     run the parallel evaluations.
 
