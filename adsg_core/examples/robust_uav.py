@@ -147,7 +147,7 @@ class RobustUAVStochasticEvaluator(DSGStochasticEvaluator):
         self.metric_node_map: Dict[str, MetricNode] = {}
         self.option_nodes: Dict[str, List[UAVOptionNode]] = {}
 
-        obj_scalar = [Margin(k=self.k, direction=1), Mean()]
+        obj_scalar = [Margin(k=self.k), Mean()]
 
         super().__init__(self.get_dsg(objective=objective), uq_method=uq_method, obj_scalar=obj_scalar)
 
