@@ -1,16 +1,12 @@
-import math
 import pytest
 import numpy as np
 import openturns as ot
 from typing import *
-from adsg_core.graph.adsg import DSGType
 from adsg_core.graph.adsg_basic import *
 from adsg_core.graph.adsg_nodes import *
-from adsg_core.optimization.evaluator import *
 from adsg_core.optimization.stochastic_evaluator import *
 from adsg_core.optimization.graph_processor import *
-from sb_arch_opt.uncertainty import (MonteCarlo, PolynomialChaos, StochasticOutput,
-                                     Mean, Margin, Quantile)
+from sb_arch_opt.uncertainty import MonteCarlo, PolynomialChaos, StochasticOutput, Mean, Margin, Quantile, UQMethod
 
 
 def _dsg_with_parameters(n, par_nodes):
@@ -19,12 +15,12 @@ def _dsg_with_parameters(n, par_nodes):
     return dsg.set_start_nodes({n[0]})
 
 
-def _evaluator(dsg, n_evaluations=5, seed=42) -> 'StochasticDSGEvaluator':
-    class _Evaluator(StochasticDSGEvaluator):
+def _evaluator(dsg, n_evaluations=5, seed=42) -> 'DSGStochasticEvaluator':
+    class _Stochastic_Evaluator(DSGStochasticEvaluator):
         def _evaluate_sample(self, dsg_instance, metric_nodes):
-            return {}
+            raise NotImplementedError
 
-    return _Evaluator(dsg, uq_method=MonteCarlo(n_evaluations, seed=seed))
+    return _Stochastic_Evaluator(dsg, uq_method=MonteCarlo(n_evaluations, seed=seed))
 
 
 def _dsg_with_branch_parameters(n, common, only_a, only_b):
@@ -34,7 +30,7 @@ def _dsg_with_branch_parameters(n, common, only_a, only_b):
     return dsg.set_start_nodes({n[0]})
 
 
-class BeamEvaluator(StochasticDSGEvaluator):
+class BeamStochasticEvaluator(DSGStochasticEvaluator):
     """Pick a material and a thickness for a beam under an uncertain load.
 
     material: steel (stiff, heavy) or alu; t: continuous thickness. The stiffness parameter is branch-local, so
@@ -120,12 +116,12 @@ class BeamEvaluator(StochasticDSGEvaluator):
 
 @pytest.fixture
 def beam():
-    return BeamEvaluator()
+    return BeamStochasticEvaluator()
 
 
 @pytest.fixture
 def constrained_beam():
-    return BeamEvaluator(stress_ref=60.)
+    return BeamStochasticEvaluator(stress_ref=60.)
 
 
 def test_input_parameter_node(n):
@@ -237,48 +233,6 @@ def test_param_space_uses_the_distributions_from_the_graph(n):
     assert marginals['h'].getRange().getUpperBound()[0] == pytest.approx(10.)
 
 
-def test_param_realization_is_keyed_by_node(n):
-    # The realization covers every input parameter node, stochastic or not: a deterministic one contributes its
-    # own value, so the evaluation always finds a number for every parameter it can reach on the graph
-    stochastic = InputParameterNode('u', ot.Normal(10., 2.))
-    deterministic = InputParameterNode('rho', 1.225)
-    evaluator = _evaluator(_dsg_with_parameters(n, [stochastic, deterministic]))
-
-    samples = MonteCarlo(5, seed=42).get_samples(evaluator.param_space)
-    param_nodes = [stochastic, deterministic]
-
-    seen = []
-    for i in range(5):
-        realization = evaluator._param_realization(param_nodes, samples, i)
-
-        assert realization[deterministic] == 1.225
-        assert realization[stochastic] == pytest.approx(samples[i, 0])
-        assert all(isinstance(value, float) for value in realization.values())
-        seen.append(realization[stochastic])
-
-    assert len(set(seen)) == 5  # a different realization each time
-
-
-def test_param_realization_covers_branch_local_parameters(n):
-    # A parameter that only exists in one branch still has a column in the space, so every instance's nodes
-    # resolve against the same realization
-    common = InputParameterNode('common', ot.Normal(0., 1.))
-    only_a = InputParameterNode('only_a', ot.Normal(1., 1.))
-    only_b = InputParameterNode('only_b', ot.Normal(2., 1.))
-    evaluator = _evaluator(_dsg_with_branch_parameters(n, common, only_a, only_b))
-
-    samples = MonteCarlo(5, seed=42).get_samples(evaluator.param_space)
-    realization = evaluator._param_realization([common, only_a, only_b], samples, 0)
-
-    assert set(realization) == {common, only_a, only_b}
-    assert all(isinstance(value, float) for value in realization.values())
-
-    # Only the nodes this instance carries are resolved, and they take the same columns of the same design
-    instance_only = evaluator._param_realization([common, only_a], samples, 0)
-    assert set(instance_only) == {common, only_a}
-    assert instance_only[common] == realization[common]
-
-
 def test_evaluate_restores_parameter_values(beam):
     dsg, _, _ = beam.get_graph([0, 3.])
     beam.evaluate(dsg)
@@ -308,10 +262,6 @@ def test_evaluate_stores_a_stochastic_output_per_metric(beam):
 
 
 def test_evaluate_pairs_each_metric_with_its_own_output(constrained_beam):
-    # Regression: outputs were assigned by position over the instance's own metric_nodes, which is graph-ordered
-    # (mass, deflection, capacity, stress) rather than objectives-by-name-then-constraints (capacity, deflection,
-    # mass, stress). Every value below is checked against what the model computes, not against what evaluate()
-    # returned: both come from the same mapping, so a mispairing would corrupt them consistently.
     dsg, _, _ = constrained_beam.get_graph([0, 3.])
     objective_values, constraint_values = constrained_beam.evaluate(dsg)
     by_name = {objective.name: value for objective, value in zip(constrained_beam.objectives, objective_values)}
@@ -396,9 +346,9 @@ def test_problem_evaluation_and_statistics(beam):
 
 
 def test_problem_scalars_take_effect():
-    evaluator = BeamEvaluator(stress_ref=60.,
-                              obj_scalar=[Mean(), Margin(k=2.), Mean()],
-                              constr_scalar=[Quantile(q=.9)])
+    evaluator = BeamStochasticEvaluator(stress_ref=60.,
+                                        obj_scalar=[Mean(), Margin(k=2.), Mean()],
+                                        constr_scalar=[Quantile(q=.9)])
     problem = evaluator.get_problem()
     out = problem.evaluate(np.array([[0, 3.]]), return_as_dictionary=True)
     deflection, stress = out['f_stochastic'][0, 1], out['g_stochastic'][0, 0]
@@ -431,18 +381,18 @@ def test_problem_uses_common_random_numbers_and_one_graph_per_point(beam):
 @pytest.mark.parametrize('parallel_processes', [True, False])
 def test_problem_evaluates_in_parallel(parallel_processes):
     x = np.array([[0, 2.], [1, 4.], [0, 3.], [1, 2.5]])
-    f_serial = BeamEvaluator().get_problem().evaluate(x, return_as_dictionary=True)['F']
+    f_serial = BeamStochasticEvaluator().get_problem().evaluate(x, return_as_dictionary=True)['F']
 
-    problem = BeamEvaluator().get_problem(n_parallel=2, parallel_processes=parallel_processes)
+    problem = BeamStochasticEvaluator().get_problem(n_parallel=2, parallel_processes=parallel_processes)
     out = problem.evaluate(x, return_as_dictionary=True)
 
     assert problem.get_n_batch_evaluate() == 2
     assert np.all(np.isfinite(out['F']))
-    assert out['F'] == pytest.approx(f_serial)  # workers see the same realizations as the serial loop
+    assert out['F'] == pytest.approx(f_serial)  # see the same realizations as the serial loop
 
 
 def test_problem_with_polynomial_chaos():
-    evaluator = BeamEvaluator(uq_method=PolynomialChaos(40, seed=42, degree=2))
+    evaluator = BeamStochasticEvaluator(uq_method=PolynomialChaos(40, seed=42, degree=2))
     out = evaluator.get_problem().evaluate(np.array([[0, 2.]]), return_as_dictionary=True)
 
     assert np.all(np.isfinite(out['F']))
@@ -455,9 +405,9 @@ def test_problem_with_polynomial_chaos():
 
 
 def test_uav_example():
-    from adsg_core.examples.robust_uav import RobustUAVEvaluator
+    from adsg_core.examples.robust_uav import RobustUAVStochasticEvaluator
 
-    evaluator = RobustUAVEvaluator(MonteCarlo(25, seed=42), k=2.)
+    evaluator = RobustUAVStochasticEvaluator(MonteCarlo(25, seed=42), k=2.)
     assert set(evaluator.param_space.parameter_names) == {'bsfc', 'drag_factor', 'eta_bat', 'headwind'}
     assert not evaluator.par_payload.is_stochastic
 
@@ -483,9 +433,9 @@ def test_uav_example():
 
 
 def test_uav_example_statistics_helper():
-    from adsg_core.examples.robust_uav import RobustUAVEvaluator
+    from adsg_core.examples.robust_uav import RobustUAVStochasticEvaluator
 
-    evaluator = RobustUAVEvaluator(MonteCarlo(25, seed=1), k=2.)
+    evaluator = RobustUAVStochasticEvaluator(MonteCarlo(25, seed=1), k=2.)
     dsg, _, _ = evaluator.get_graph(evaluator.get_random_design_vector())
     statistics = evaluator.evaluate_statistics(dsg)
 

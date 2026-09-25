@@ -22,18 +22,16 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-import logging
+import warnings
 import numpy as np
 from typing import *
 from concurrent.futures import wait, ProcessPoolExecutor, ThreadPoolExecutor
-
-from adsg_core.optimization.stochastic_evaluator import  StochasticDSGEvaluator
+from adsg_core.optimization.stochastic_evaluator import  DSGStochasticEvaluator
 from adsg_core.optimization.problem import DSGDesignSpace
-from adsg_core.uncertainty import HAS_SB_ARCH_OPT, check_dependency, Scalarization, StochasticArchOptProblem, StochasticParameterSpace, UQMethod
+from sb_arch_opt.uncertainty import Scalarization, StochasticParameterSpace, UQMethod
+from sb_arch_opt.stochastic_problem import StochasticArchOptProblem
 
-__all__ = ['check_dependency', 'DSGStochasticArchOptProblem', 'HAS_SB_ARCH_OPT', 'ADSGStochasticArchOptProblem']
-
-log = logging.getLogger('adsg.opt')
+__all__ = ['DSGStochasticArchOptProblem', 'ADSGStochasticArchOptProblem']
 
 
 class DSGStochasticArchOptProblem(StochasticArchOptProblem):
@@ -41,14 +39,14 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
     [SBArchOpt](https://sbarchopt.readthedocs.io/) wrapper for a DSG stochastic optimization problem. Note that under the
     hood, SBArchOpt uses [pymoo](https://pymoo.org/).
     The connection is made between the `StochasticArchOptProblem` class (which specifies all information needed to optimize an
-    architecture optimization problem), and the `StochasticDSGEvaluator` class, which contains all information for
+    architecture optimization problem), and the `DSGStochasticEvaluator` class, which contains all information for
     running a stochastic DSG architecture optimization problem.
 
     Parallel processing is possible by setting `n_parallel` to a number higher than 1.
     By default, assumes parallel processing is done within the thread and therefore starts a multiprocessing pool to
     run the parallel evaluations.
 
-    Ensure SBArchOpt is installed: `pip install sb-arch-opt`
+    Ensure SBArchOpt is installed with uncertainty package: `pip install sb-arch-opt[uncertainty]`
 
     Example usage:
 
@@ -56,22 +54,21 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
     from pymoo.optimize import minimize
     from sb_arch_opt.algo.pymoo_interface import get_nsga2
 
-    evaluator = ...  # Instance of StochasticDSGEvaluator
+    evaluator = ...  # Instance of DSGStochasticEvaluator
 
     algorithm = get_nsga2(pop_size=100)
-    problem = DSGStochasticArchOptProblem(evaluator, uq_method)
+    problem = DSGStochasticArchOptProblem(evaluator, param_space, uq_method)
 
     result = minimize(problem, algorithm, termination=('n_eval', 500))
     ```
     """
 
-    def __init__(self, evaluator: StochasticDSGEvaluator,
+    def __init__(self, evaluator: DSGStochasticEvaluator,
                  param_space: StochasticParameterSpace,
                  uq_method: UQMethod,
                  obj_scalar: Optional[List[Scalarization]] = None,
                  constr_scalar: Optional[List[Scalarization]] = None,
                  n_parallel=None, parallel_processes=True):
-        check_dependency()
 
         self.evaluator = evaluator
         self.n_parallel = n_parallel
@@ -91,7 +88,7 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
     def _arch_evaluate(self, x: np.ndarray, is_active_out: np.ndarray, f_out: np.ndarray, g_out: np.ndarray, h_out: np.ndarray, *args,
                        f_stoch_out: np.ndarray=None, g_stoch_out: np.ndarray=None, h_stoch_out: np.ndarray=None, **kwargs):
         """
-        Overrides parent _arch_evaluate class to integrate it with StochasticDSGEvaluator, but maintains the same functionality.
+        Overrides parent _arch_evaluate class to integrate it with DSGStochasticEvaluator, but maintains the same functionality.
         """
         # Correct integer design variables
         self.design_space.round_x_discrete(x)
@@ -108,6 +105,7 @@ class DSGStochasticArchOptProblem(StochasticArchOptProblem):
 
         # Evaluate architectures for each DSG instance
         if self.n_parallel is not None and self.n_parallel > 1:
+            self.uq_method.get_samples(self.param_space) # Get samples, so that same seed is used for parallel execution
             executor_class = ProcessPoolExecutor if self.parallel_processes else ThreadPoolExecutor
             with executor_class(max_workers=self.n_parallel) as executor:
                 futures = [executor.submit(self.evaluator.evaluate, dsg) for dsg in dsg_instances]
