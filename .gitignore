@@ -237,3 +237,4 @@ ipython_config.py
 *.graphml
 *.gml
 *.dot
+.cache/
